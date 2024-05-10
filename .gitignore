@@ -1,4 +1,8 @@
-/alloy/
 /som-rs/
-/WLambda/
-alloy.lock
+yksom/
+venv/
+bdwgc/
+/bin/
+summary.csv
+plots/
+/alloy/

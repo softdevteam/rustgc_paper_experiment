@@ -1,0 +1,8 @@
+*.bin
+*.html
+arc/
+gc/
+wrk/
+hyper/
+sws/
+data/

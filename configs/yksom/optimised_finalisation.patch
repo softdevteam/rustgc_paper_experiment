@@ -1,0 +1,38 @@
+From a1ff68dbb0d5bbe77331652a502da7b5f11fdb9f Mon Sep 17 00:00:00 2001
+From: Jake Hughes <jh@jakehughes.uk>
+Date: Tue, 28 May 2024 14:05:57 +0100
+Subject: [PATCH] Elision
+
+---
+ src/main.rs | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/src/main.rs b/src/main.rs
+index ca8345a..89c8a75 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -42,6 +42,7 @@ fn error(msg: &str) -> ! {
+ fn main() {
+     let args = env::args().collect::<Vec<_>>();
+     let prog = &args[0];
++    let benchmark = &args[5].clone();
+     let matches = Options::new()
+         .reqopt(
+             "",
+@@ -123,6 +124,13 @@ fn main() {
+             if code != 0 {
+                 e.console_print(&vm);
+             }
++            use std::io::Write;
++            let mut rp = PathBuf::new();
++            rp.push("yksom_elision_counts");
++            rp.push(benchmark);
++            let mut results = std::fs::File::create(rp).unwrap();
++            let finalised = std::gc::finalized_total();
++            let _ = results.write(&finalised.to_string().into_bytes());
+             process::exit(code);
+         }
+     }
+-- 
+2.44.0
+
