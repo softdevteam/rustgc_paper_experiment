@@ -1,0 +1,41 @@
+From edeff62e7ea201ce530d2e8d213ac03128909054 Mon Sep 17 00:00:00 2001
+From: Jake Hughes <jake@bencher16.soft-dev.org>
+Date: Fri, 10 May 2024 12:43:10 +0100
+Subject: [PATCH] rebench_perf
+
+---
+ rebench.conf | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/rebench.conf b/rebench.conf
+index ccbf137..b724d66 100644
+--- a/rebench.conf
++++ b/rebench.conf
+@@ -55,12 +55,12 @@ benchmark_suites:
+             - Mandelbrot:   {extra_args: 30}
+ 
+ executors:
+-    som-rs-ast:
++    finaliser_elision:
+         path: .
+-        executable: ./target/release/som-interpreter-ast
+-    som-rs-bc:
++        executable: ./finaliser_elision/release/som-interpreter-bc
++    naive_finalisation:
+         path: .
+-        executable: ./target/release/som-interpreter-bc
++        executable: ./naive_finalisation/release/som-interpreter-bc
+ 
+ # define the benchmarks to be executed for a re-executable benchmark run
+ experiments:
+@@ -70,5 +70,5 @@ experiments:
+             - micro
+             - macro
+         executions:
+-            - som-rs-ast
+-            - som-rs-bc
++            - finaliser_elision
++            - naive_finalisation
+-- 
+2.39.2
+
