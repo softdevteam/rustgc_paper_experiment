@@ -4,6 +4,7 @@ set -e
 
 ALLOYSV=c50c1767de51e8354a90cb4e680330182e3eb921
 SOMRSSV=35b780cbee765cca24201fe063d3f1055ec7f608
+YKSOMSV=fc7c7c131ba93b7e3c85a172fbcc245f29c324d6
 WLAMBDASV=b370e342fdffeae6f
 
 if [ ! -d alloy ]; then
@@ -24,6 +25,13 @@ if [ ! -d WLambda ]; then
     git clone --recursive https://github.com/WeirdConstructor/WLambda
     cd WLambda
     git checkout ${WLAMBDASV}
+    cd ..
+fi
+
+if [ ! -d yksom ]; then
+    git clone --recursive https://github.com/softdevteam/yksom
+    cd yksom
+    git checkout ${YKSOMSV}
     cd ..
 fi
 
@@ -54,40 +62,69 @@ if [ ! -f alloy.lock ]; then
     python3 x.py build --stage 1 --config ../benchmark.config.toml --build-dir=alloy_all_barriers
     rustup toolchain link alloy_all_barriers alloy_all_barriers/x86_64-unknown-linux-gnu/stage1/
     # Once built, create a lock file to prevent us from rebuilding it.
-    cd ../
+    cd ..
     touch alloy.lock
 fi
 
 # ============= Build som-rs with each configuration =====================
-cd som-rs
-# Nightly rustc with reference counting (baseline)
-echo "===> building som-rs (nightly + rc)"
-git checkout -- .
-cargo +nightly build --release -p som-interpreter-bc --target-dir=rc
-# Alloy full gc
-echo "===> building som-rs (alloy)"
-git checkout -- .
-git apply ../configs/som-rs/use_gc.patch
-cargo +alloy_full build --release -p som-interpreter-bc --target-dir=gc
-echo "===> building som-rs (for finalisation elision test)"
-git checkout -- .
-git apply ../configs/som-rs/use_gc.patch
-git apply ../configs/som-rs/optimised_finalisation.patch
-cargo +alloy_full build --release -p som-interpreter-bc --target-dir=finaliser_elision
-# Alloy naive finalisation
-echo "===> building som-rs (alloy + naive finalisation)"
-git checkout -- .
-git apply ../configs/som-rs/use_gc.patch
-git apply ../configs/som-rs/naive_finalisation.patch
-cargo +alloy_naive_finalisation build --release -p som-interpreter-bc --target-dir=naive_finalisation
-# Alloy no barriers
-echo "===> building som-rs (alloy + no finalisation barriers)"
-git checkout -- .
-git apply ../configs/som-rs/use_gc.patch
-cargo +alloy_no_barriers build --release -p som-interpreter-bc --target-dir=no_barriers
-# Alloy all barriers
-echo "===> building som-rs (alloy + all finalisation barriers)"
-git checkout -- .
-git apply ../configs/som-rs/use_gc.patch
-cargo +alloy_all_barriers build --release -p som-interpreter-bc --target-dir=all_barriers
+if [ ! -f som-rs.lock ]; then
+    cd som-rs
+    # Nightly rustc with reference counting (baseline)
+    echo "===> building som-rs (nightly + rc)"
+    git checkout -- .
+    cargo +nightly build --release -p som-interpreter-bc --target-dir=rc
+    # Alloy full gc
+    echo "===> building som-rs (alloy)"
+    git checkout -- .
+    git apply ../configs/som-rs/use_gc.patch
+    cargo +alloy_full build --release -p som-interpreter-bc --target-dir=gc
+    echo "===> building som-rs (for finalisation elision test)"
+    git checkout -- .
+    git apply ../configs/som-rs/use_gc.patch
+    git apply ../configs/som-rs/optimised_finalisation.patch
+    cargo +alloy_full build --release -p som-interpreter-bc --target-dir=finaliser_elision
+    # Alloy naive finalisation
+    echo "===> building som-rs (alloy + naive finalisation)"
+    git checkout -- .
+    git apply ../configs/som-rs/use_gc.patch
+    git apply ../configs/som-rs/naive_finalisation.patch
+    cargo +alloy_naive_finalisation build --release -p som-interpreter-bc --target-dir=naive_finalisation
+    # Alloy no barriers
+    echo "===> building som-rs (alloy + no finalisation barriers)"
+    git checkout -- .
+    git apply ../configs/som-rs/use_gc.patch
+    cargo +alloy_no_barriers build --release -p som-interpreter-bc --target-dir=no_barriers
+    # Alloy all barriers
+    echo "===> building som-rs (alloy + all finalisation barriers)"
+    git checkout -- .
+    git apply ../configs/som-rs/use_gc.patch
+    cargo +alloy_all_barriers build --release -p som-interpreter-bc --target-dir=all_barriers
+    cd ..
+    touch som-rs.lock
+fi
 
+if [ ! -f yksom.lock ]; then
+    cd yksom
+    # Alloy full gc
+    echo "===> building yksom (alloy)"
+    cargo +alloy_full build --release --target-dir=gc
+    echo "===> building yksom (for finalisation elision test)"
+    git checkout -- .
+    git apply ../configs/yksom/optimised_finalisation.patch
+    cargo +alloy_full build --release --target-dir=finaliser_elision
+    # Alloy naive finalisation
+    echo "===> building yksom (alloy + naive finalisation)"
+    git checkout -- .
+    git apply ../configs/yksom/naive_finalisation.patch
+    cargo +alloy_naive_finalisation build --release --target-dir=naive_finalisation
+    # Alloy no barriers
+    echo "===> building yksom (alloy + no finalisation barriers)"
+    git checkout -- .
+    cargo +alloy_no_barriers build --release --target-dir=no_barriers
+    # Alloy all barriers
+    echo "===> building yksom (alloy + all finalisation barriers)"
+    git checkout -- .
+    cargo +alloy_all_barriers build --release --target-dir=all_barriers
+    cd ..
+    touch yksom.lock
+fi

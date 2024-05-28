@@ -1,5 +1,8 @@
 /alloy/
 /som-rs/
+/yksom/
 /WLambda/
 alloy.lock
+som-rs.lock
+yksom.lock
 raw_data/
