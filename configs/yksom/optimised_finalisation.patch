@@ -15,7 +15,7 @@ index ca8345a..89c8a75 100644
  fn main() {
      let args = env::args().collect::<Vec<_>>();
      let prog = &args[0];
-+    let benchmark = &args[1].clone();
++    let benchmark = &args[5].clone();
      let matches = Options::new()
          .reqopt(
              "",

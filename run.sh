@@ -41,7 +41,7 @@ mv rebench.data ../raw_data/yksom_finaliser_elision.data
 mv yksom_naive_counts ../raw_data/
 mv yksom_elision_counts ../raw_data/
 
-# # Earlier finalisation / barriers
+# Earlier finalisation / barriers
 git checkout -- .
 cp ../configs/yksom/rebench_barriers.conf rebench.conf
 rebench --experiment all rebench.conf all || true
