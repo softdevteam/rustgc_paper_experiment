@@ -127,5 +127,5 @@ def process_table(table_name):
                 "{:,}".format(sum(elision.values()))))
 
 process_graph("som_rs_finalisers.svg", "raw_data/som-rs-finaliser_elision.data", 'naive_finalisation', 'finaliser_elision')
-process_graph("yksom_finalisers.svg", "raw_data/yksom_finaliser_elision.data", 'naive_finalisation', 'finaliser_elision')
-process_table("finaliser_count_table.tex")
+# process_graph("yksom_finalisers.svg", "raw_data/yksom_finaliser_elision.data", 'naive_finalisation', 'finaliser_elision')
+# process_table("finaliser_count_table.tex")

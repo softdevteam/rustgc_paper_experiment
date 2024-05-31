@@ -71,24 +71,24 @@ def process_graph(name, p, rc, gc, rc_boehm):
             gc_runs.append(g)
             rc_boehm_runs.append(b)
 
-        print(rc_runs)
 
         rc_means.append(mean(rc_runs))
         rc_cis.append(confidence_interval(rc_runs))
         gc_means.append(mean(gc_runs))
         gc_cis.append(confidence_interval(gc_runs))
         rc_boehm_means.append(mean(rc_boehm_runs))
-        rc_cis.append(confidence_interval(rc_boehm_runs))
+        rc_boehm_cis.append(confidence_interval(rc_boehm_runs))
+        print(rc_cis)
 
     sns.set(style="whitegrid")
     plt.rc('text', usetex=True)
     plt.rc('font', family='sans-serif')
-    fig, ax = plt.subplots(figsize=(8, 4.5))
-    df = pd.DataFrame(zip(rc_means, rc_boehm_means, gc_means), index=benchmarks)
-    errs = pd.DataFrame(zip(rc_cis, rc_boehm_cis, gc_cis), index=benchmarks)
+    fig, ax = plt.subplots(figsize=(10, 5))
+    df = pd.DataFrame(zip(rc_boehm_means, gc_means), index=benchmarks)
+    errs = pd.DataFrame(zip(rc_boehm_cis, gc_cis), index=benchmarks)
     plot = df.plot(kind='bar', width=0.8, ax=ax, yerr=errs)
     plot.margins(x=0.01)
-    ax.legend(['RC', 'RC(boehm)' 'GC'])
+    ax.legend(['RC (bdwgc alloc)', 'GC (Alloy)'], loc="upper right")
 
     ax.spines['right'].set_visible(False)
     ax.spines['top'].set_visible(False)
@@ -108,4 +108,4 @@ def process_graph(name, p, rc, gc, rc_boehm):
     plt.tight_layout()
     plt.savefig(name, format="svg", bbox_inches="tight")
 
-process_graph("som_rs_perf.svg", "raw_data/som-rs-perf.data", 'som-rs-rc', 'som-rs-gc', 'som-rs-rc-boehm')
+process_graph("som_rs_perf.svg", "raw_data/som-rs-perf.data", 'som-rs-rc', 'som-rs-gc', 'som-rs-rc-bdwgc')
