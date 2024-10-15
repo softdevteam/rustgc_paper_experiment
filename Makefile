@@ -93,7 +93,7 @@ clean-confirm:
 	@( read -p "Are you sure? [y/N]: " sure && case "$$sure" in [yY]) true;; *) false;; esac )
 
 $(ALLOY_CFGS_INSTALL_DIRS): $(ALLOY_SRC_DIR)
-	cd $(ALLOY_SRC_DIR) && git diff-index --quiet HEAD --
+	cd $(ALLOY_SRC_DIR) && git reset --hard && ./x.py clean
 	cd $(ALLOY_SRC_DIR) && git apply $(PATCH_DIR)/alloy/$(notdir $@).patch
 	$(PYTHON) $(ALLOY_SRC_DIR)/x.py install --config benchmark.config.toml \
 		--stage $(ALLOY_BOOTSTRAP_STAGE) \
@@ -101,7 +101,6 @@ $(ALLOY_CFGS_INSTALL_DIRS): $(ALLOY_SRC_DIR)
 		--set build.docs=false \
 		--set install.prefix=$@ \
 		--set install.sysconfdir=etc
-	cd $(ALLOY_SRC_DIR) && git reset --hard
 
 $(ALLOY_SRC_DIR):
 	git clone $(ALLOY_REPO) $(ALLOY_SRC_DIR)
