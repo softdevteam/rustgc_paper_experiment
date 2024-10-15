@@ -65,22 +65,14 @@ source_files: hadoop eclipse jenkins spring
 
 hadoop:
 	git clone https://github.com/apache/hadoop --depth 1
-	cd hadoop && git checkout e4b070025b38d8866dd1e2dc4a3f46b8d9db4ad5
 
 eclipse:
 	git clone https://github.com/eclipse-platform/eclipse.platform eclipse --depth 1
-	cd eclipse && git checkout e14565e5022852f2e1eebadbe12d09f4cee88378
 spring:
 	git clone https://github.com/spring-projects/spring-framework --depth 1 spring
-	cd spring && git checkout 60978ff4c7fdcda9406ddad6b04bd2f1237fb77e
 
 jenkins:
 	git clone https://github.com/jenkinsci/jenkins jenkins --depth 1
-	cd jenkins && git checkout 01ee3ad4d4c5c455c9ae48f3cde947c7f8f80f02
-
-# elasticsearch:
-# 	git clone https://github.com/elastic/elasticsearch --depth 1
-# 	cd elasticsearch && git checkout 74522c43d80c7eaf67b12eccb841fef74b85f808
 
 clean-benchmarks:
 	rm -rf results
@@ -90,12 +82,6 @@ clean-builds:
 	rm -rf $(PWD)/cactus
 	rm -rf $(PWD)/grmtools
 	rm -rf $(PWD)/regex
+	rm -rf jenkins spring eclipse hadoop
 
 clean: clean-builds clean-benchmarks
-
-venv: $(VENV_DIR)/bin/activate
-
-$(VENV_DIR)/bin/activate: requirements.txt
-	$(PYTHON) -m venv $(VENV_DIR)
-	$(PIP) install -r requirements.txt
-
