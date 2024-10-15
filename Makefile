@@ -88,7 +88,8 @@ clean-builds:
 
 build-alloy: venv $(ALLOY_SRC_DIR) build-alloy-barriers-none \
 	build-alloy-barriers-naive build-alloy-barriers-opt \
-	build-alloy-finalise-elide build-alloy-finalise-naive
+	build-alloy-finalise-elide build-alloy-finalise-naive \
+	build-alloy-normal
 
 build-alloy-barriers-naive:
 	cd $(ALLOY_SRC_DIR) && git reset --hard && ./x.py clean
@@ -136,6 +137,15 @@ build-alloy-finalise-naive:
 		--build-dir $(ALLOY_SRC_DIR)/build \
 		--set build.docs=false \
 		--set install.prefix=${BIN}/alloy/finalise_naive \
+		--set install.sysconfdir=etc
+
+build-alloy-normal:
+	cd $(ALLOY_SRC_DIR) && git reset --hard && ./x.py clean
+	$(PYTHON) $(ALLOY_SRC_DIR)/x.py install --config benchmark.config.toml \
+		--stage $(ALLOY_BOOTSTRAP_STAGE) \
+		--build-dir $(ALLOY_SRC_DIR)/build \
+		--set build.docs=false \
+		--set install.prefix=${BIN}/alloy/alloy \
 		--set install.sysconfdir=etc
 
 clean: clean-confirm clean-plots clean-benchmarks clean-builds
