@@ -10,8 +10,8 @@ YKSOM_VERSION=fc7c7c131ba93b7e3c85a172fbcc245f29c324d6
 
 YKSOM_EXPS = $(addprefix results/, yksom_elision, yksom_barriers)
 
-SOMRSBC_EXPS = $(addprefix results/, som_rs_bc_elision, som_rs_bc_barriers)
-SOMRSAST_EXPS = $(addprefix results/, som_rs_ast_elision, som_rs_ast_barriers)
+SOMRSBC_EXPS = $(addprefix results/, som_rs_bc_elision, som_rs_bc_barriers, som_rs_bc_perf)
+SOMRSAST_EXPS = $(addprefix results/, som_rs_ast_elision, som_rs_ast_barriers, som_rs_ast_perf)
 
 EXPERIMENTS = $(SOMRSAST_EXPS) $(SOMRSBC_EXPS) $(YKSOM_EXPS)
 
