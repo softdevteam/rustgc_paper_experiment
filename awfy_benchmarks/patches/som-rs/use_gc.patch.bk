@@ -1,0 +1,1790 @@
+diff --git a/som-core/src/ast.rs b/som-core/src/ast.rs
+index c44aafc..a2b785b 100644
+--- a/som-core/src/ast.rs
++++ b/som-core/src/ast.rs
+@@ -110,6 +110,9 @@ pub struct Body {
+     pub full_stopped: bool,
+ }
+ 
++unsafe impl std::gc::FinalizerOptional for Body {}
++unsafe impl std::gc::FinalizerOptional for Expression {}
++
+ /// Represents an expression.
+ ///
+ /// Exemple:
+diff --git a/som-core/src/lib.rs b/som-core/src/lib.rs
+index f3ef8f8..36f2ab8 100644
+--- a/som-core/src/lib.rs
++++ b/som-core/src/lib.rs
+@@ -2,6 +2,8 @@
+ //! This crate contains common types that are useful to be shared across multiple tools when manipulating SOM-related things.
+ //!
+ 
++#![feature(gc)]
++
+ /// The SOM Abstract Syntax Tree definitions.
+ pub mod ast;
+ /// The SOM bytecode definitions.
+diff --git a/som-interpreter-ast/Cargo.toml b/som-interpreter-ast/Cargo.toml
+index 321ba48..da8e2a3 100644
+--- a/som-interpreter-ast/Cargo.toml
++++ b/som-interpreter-ast/Cargo.toml
+@@ -7,6 +7,10 @@ edition = "2018"
+ publish = false
+ license = "MIT OR Apache-2.0"
+ 
++
++[lib]
++doctest = false
++
+ [dependencies]
+ # internal
+ som-core = { path = "../som-core", version = "0.1.0" }
+diff --git a/som-interpreter-ast/README.md b/som-interpreter-ast/README.md
+index e454856..c24ac9d 100644
+--- a/som-interpreter-ast/README.md
++++ b/som-interpreter-ast/README.md
+@@ -5,4 +5,4 @@ This is the interpreter for the Simple Object Machine.
+ 
+ It is AST-based, in that it works by recursively traversing and evaluating nodes from the Abstract Syntax Tree from **`som-core`**.  
+ 
+-Resources are managed and tracked through reference-counting (using Rust's **`Rc`**/**`Weak`** types).  
++Resources are managed and tracked through reference-counting (using Rust's **`Gc`**/**`Weak`** types).
+diff --git a/som-interpreter-ast/src/class.rs b/som-interpreter-ast/src/class.rs
+index c4d21e1..30a46d9 100644
+--- a/som-interpreter-ast/src/class.rs
++++ b/som-interpreter-ast/src/class.rs
+@@ -1,6 +1,6 @@
+ use std::cell::RefCell;
+ use std::fmt;
+-use std::rc::{Rc, Weak};
++use std::gc::Gc;
+ 
+ use indexmap::IndexMap;
+ 
+@@ -9,16 +9,7 @@ use som_core::ast::{ClassDef, MethodBody};
+ use crate::method::{Method, MethodKind};
+ use crate::primitives;
+ use crate::value::Value;
+-use crate::{SOMRef, SOMWeakRef};
+-
+-/// A reference that may be either weak or owned/strong.
+-#[derive(Debug, Clone)]
+-pub enum MaybeWeak<A> {
+-    /// An owned reference.
+-    Strong(SOMRef<A>),
+-    /// A weak reference.
+-    Weak(SOMWeakRef<A>),
+-}
++use crate::SOMRef;
+ 
+ /// Represents a loaded class.
+ #[derive(Clone)]
+@@ -26,14 +17,14 @@ pub struct Class {
+     /// The class' name.
+     pub name: String,
+     /// The class of this class.
+-    pub class: MaybeWeak<Class>,
++    pub class: Option<SOMRef<Class>>,
+     /// The superclass of this class.
+     // TODO: Should probably be `Option<SOMRef<Class>>`.
+-    pub super_class: SOMWeakRef<Class>,
++    pub super_class: Option<SOMRef<Class>>,
+     /// The class' locals.
+     pub locals: IndexMap<String, Value>,
+     /// The class' methods/invokables.
+-    pub methods: IndexMap<String, Rc<Method>>,
++    pub methods: IndexMap<String, Gc<Method>>,
+     /// Is this class a static one ?
+     pub is_static: bool,
+ }
+@@ -67,25 +58,25 @@ impl Class {
+             instance_locals
+         };
+ 
+-        let static_class = Rc::new(RefCell::new(Self {
++        let static_class = Gc::new(RefCell::new(Self {
+             name: format!("{} class", defn.name),
+-            class: MaybeWeak::Weak(Weak::new()),
+-            super_class: Weak::new(),
++            class: None,
++            super_class: None,
+             locals: static_locals,
+             methods: IndexMap::new(),
+             is_static: true,
+         }));
+ 
+-        let instance_class = Rc::new(RefCell::new(Self {
++        let instance_class = Gc::new(RefCell::new(Self {
+             name: defn.name.clone(),
+-            class: MaybeWeak::Strong(static_class.clone()),
+-            super_class: Weak::new(),
++            class: Some(static_class),
++            super_class: None,
+             locals: instance_locals,
+             methods: IndexMap::new(),
+             is_static: false,
+         }));
+ 
+-        let mut static_methods: IndexMap<String, Rc<Method>> = defn
++        let mut static_methods: IndexMap<String, Gc<Method>> = defn
+             .static_methods
+             .iter()
+             .map(|method| {
+@@ -97,9 +88,9 @@ impl Class {
+                 let method = Method {
+                     kind,
+                     signature: signature.clone(),
+-                    holder: Rc::downgrade(&static_class),
++                    holder: Some(static_class),
+                 };
+-                (signature, Rc::new(method))
++                (signature, Gc::new(method))
+             })
+             .collect();
+ 
+@@ -115,13 +106,13 @@ impl Class {
+                 let method = Method {
+                     kind: MethodKind::Primitive(*primitive),
+                     signature: signature.to_string(),
+-                    holder: Rc::downgrade(&static_class),
++                    holder: Some(static_class),
+                 };
+-                static_methods.insert(signature.to_string(), Rc::new(method));
++                static_methods.insert(signature.to_string(), Gc::new(method));
+             }
+         }
+ 
+-        let mut instance_methods: IndexMap<String, Rc<Method>> = defn
++        let mut instance_methods: IndexMap<String, Gc<Method>> = defn
+             .instance_methods
+             .iter()
+             .map(|method| {
+@@ -133,9 +124,9 @@ impl Class {
+                 let method = Method {
+                     kind,
+                     signature: signature.clone(),
+-                    holder: Rc::downgrade(&instance_class),
++                    holder: Some(instance_class),
+                 };
+-                (signature, Rc::new(method))
++                (signature, Gc::new(method))
+             })
+             .collect();
+ 
+@@ -151,9 +142,9 @@ impl Class {
+                 let method = Method {
+                     kind: MethodKind::Primitive(*primitive),
+                     signature: signature.to_string(),
+-                    holder: Rc::downgrade(&instance_class),
++                    holder: Some(instance_class),
+                 };
+-                instance_methods.insert(signature.to_string(), Rc::new(method));
++                instance_methods.insert(signature.to_string(), Gc::new(method));
+             }
+         }
+ 
+@@ -170,43 +161,36 @@ impl Class {
+ 
+     /// Get the class of this class.
+     pub fn class(&self) -> SOMRef<Self> {
+-        match self.class {
+-            MaybeWeak::Weak(ref weak) => weak.upgrade().unwrap_or_else(|| {
+-                panic!("superclass dropped, cannot upgrade ref ({})", self.name())
+-            }),
+-            MaybeWeak::Strong(ref owned) => owned.clone(),
+-        }
++        self.class.unwrap()
+     }
+ 
+     /// Set the class of this class (as a weak reference).
+     pub fn set_class(&mut self, class: &SOMRef<Self>) {
+-        self.class = MaybeWeak::Weak(Rc::downgrade(class));
++        self.class = Some(*class);
+     }
+ 
+     /// Set the class of this class (as a strong reference).
+     pub fn set_class_owned(&mut self, class: &SOMRef<Self>) {
+-        self.class = MaybeWeak::Strong(class.clone());
++        self.class = Some(*class);
+     }
+ 
+     /// Get the superclass of this class.
+     pub fn super_class(&self) -> Option<SOMRef<Self>> {
+-        self.super_class.upgrade()
++        self.super_class
+     }
+ 
+     /// Set the superclass of this class (as a weak reference).
+     pub fn set_super_class(&mut self, class: &SOMRef<Self>) {
+-        self.super_class = Rc::downgrade(class);
++        self.super_class = Some(*class);
+     }
+ 
+     /// Search for a given method within this class.
+-    pub fn lookup_method(&self, signature: impl AsRef<str>) -> Option<Rc<Method>> {
++    pub fn lookup_method(&self, signature: impl AsRef<str>) -> Option<Gc<Method>> {
+         let signature = signature.as_ref();
+-        self.methods.get(signature).cloned().or_else(|| {
+-            self.super_class
+-                .upgrade()?
+-                .borrow()
+-                .lookup_method(signature)
+-        })
++        self.methods
++            .get(signature)
++            .cloned()
++            .or_else(|| self.super_class.unwrap().borrow().lookup_method(signature))
+     }
+ 
+     /// Search for a local binding.
+diff --git a/som-interpreter-ast/src/evaluate.rs b/som-interpreter-ast/src/evaluate.rs
+index d55aa22..ee69cda 100644
+--- a/som-interpreter-ast/src/evaluate.rs
++++ b/som-interpreter-ast/src/evaluate.rs
+@@ -1,5 +1,5 @@
+ use std::cell::RefCell;
+-use std::rc::Rc;
++use std::gc::Gc;
+ 
+ use som_core::ast;
+ 
+@@ -45,7 +45,7 @@ impl Evaluate for ast::Expression {
+                     .frames
+                     .iter()
+                     .rev()
+-                    .any(|live_frame| Rc::ptr_eq(&live_frame, &frame));
++                    .any(|live_frame| Gc::ptr_eq(&live_frame, &frame));
+                 if has_not_escaped {
+                     Return::NonLocal(value, frame)
+                 } else {
+@@ -145,7 +145,7 @@ impl Evaluate for ast::Literal {
+                     let value = propagate!(literal.evaluate(universe));
+                     output.push(value);
+                 }
+-                Return::Local(Value::Array(Rc::new(RefCell::new(output))))
++                Return::Local(Value::Array(Gc::new(RefCell::new(output))))
+             }
+             Self::Integer(int) => Return::Local(Value::Integer(*int)),
+             Self::BigInteger(int) => match int.parse() {
+@@ -154,7 +154,7 @@ impl Evaluate for ast::Literal {
+             },
+             Self::Double(double) => Return::Local(Value::Double(*double)),
+             Self::Symbol(sym) => Return::Local(Value::Symbol(universe.intern_symbol(sym))),
+-            Self::String(string) => Return::Local(Value::String(Rc::new(string.clone()))),
++            Self::String(string) => Return::Local(Value::String(Gc::new(string.clone()))),
+         }
+     }
+ }
+@@ -169,7 +169,7 @@ impl Evaluate for ast::Block {
+     fn evaluate(&self, universe: &mut Universe) -> Return {
+         let frame = universe.current_frame();
+         // TODO: avoid cloning the whole block's AST.
+-        Return::Local(Value::Block(Rc::new(Block {
++        Return::Local(Value::Block(Gc::new(Block {
+             block: self.clone(),
+             frame: frame.clone(),
+         })))
+diff --git a/som-interpreter-ast/src/frame.rs b/som-interpreter-ast/src/frame.rs
+index d154418..b1868af 100644
+--- a/som-interpreter-ast/src/frame.rs
++++ b/som-interpreter-ast/src/frame.rs
+@@ -1,5 +1,5 @@
+ use std::collections::HashMap;
+-use std::rc::Rc;
++use std::gc::Gc;
+ 
+ use crate::block::Block;
+ use crate::class::Class;
+@@ -13,7 +13,7 @@ pub enum FrameKind {
+     /// A frame created from a block evaluation.
+     Block {
+         /// The block instance for the current frame.
+-        block: Rc<Block>,
++        block: Gc<Block>,
+     },
+     /// A frame created from a method invocation.
+     Method {
+@@ -35,6 +35,9 @@ pub struct Frame {
+     pub bindings: HashMap<String, Value>,
+ }
+ 
++unsafe impl std::gc::FinalizerOptional for Frame {}
++unsafe impl core::marker::FinalizerSafe for Frame {}
++
+ impl Frame {
+     /// Construct a new empty frame from its kind.
+     pub fn from_kind(kind: FrameKind) -> Self {
+diff --git a/som-interpreter-ast/src/hashcode.rs b/som-interpreter-ast/src/hashcode.rs
+index f3fa5bf..3af8dfd 100644
+--- a/som-interpreter-ast/src/hashcode.rs
++++ b/som-interpreter-ast/src/hashcode.rs
+@@ -99,7 +99,7 @@ impl Hash for Block {
+ 
+ impl Hash for Method {
+     fn hash<H: Hasher>(&self, hasher: &mut H) {
+-        if let Some(holder) = self.holder().upgrade() {
++        if let Some(holder) = self.holder() {
+             holder.borrow().hash(hasher);
+         } else {
+             hasher.write(b"??");
+diff --git a/som-interpreter-ast/src/invokable.rs b/som-interpreter-ast/src/invokable.rs
+index 0538ade..4411803 100644
+--- a/som-interpreter-ast/src/invokable.rs
++++ b/som-interpreter-ast/src/invokable.rs
+@@ -1,4 +1,4 @@
+-use std::rc::Rc;
++use std::gc::Gc;
+ 
+ use som_core::ast;
+ 
+@@ -44,7 +44,7 @@ impl Invoke for Method {
+                     };
+                     (receiver, iter.collect::<Vec<_>>())
+                 };
+-                let holder = match self.holder().upgrade() {
++                let holder = match self.holder() {
+                     Some(holder) => holder,
+                     None => {
+                         return Return::Exception(
+@@ -114,7 +114,7 @@ impl Invoke for ast::MethodDef {
+                 loop {
+                     match body.evaluate(universe) {
+                         Return::NonLocal(value, frame) => {
+-                            if Rc::ptr_eq(&current_frame, &frame) {
++                            if Gc::ptr_eq(&current_frame, &frame) {
+                                 break Return::Local(value);
+                             } else {
+                                 break Return::NonLocal(value, frame);
+diff --git a/som-interpreter-ast/src/lib.rs b/som-interpreter-ast/src/lib.rs
+index 6556412..b20ef73 100644
+--- a/som-interpreter-ast/src/lib.rs
++++ b/som-interpreter-ast/src/lib.rs
+@@ -2,8 +2,14 @@
+ //! This is the interpreter for the Simple Object Machine.
+ //!
+ 
++#![feature(gc)]
++use std::gc::GcAllocator;
++
++#[global_allocator]
++static A: GcAllocator = GcAllocator;
++
+ use std::cell::RefCell;
+-use std::rc::{Rc, Weak};
++use std::gc::Gc;
+ 
+ /// Facilities for manipulating blocks.
+ pub mod block;
+@@ -31,6 +37,4 @@ pub mod universe;
+ pub mod value;
+ 
+ /// A strong and owning reference to an object.
+-pub type SOMRef<T> = Rc<RefCell<T>>;
+-/// A weak reference to an object.
+-pub type SOMWeakRef<T> = Weak<RefCell<T>>;
++pub type SOMRef<T> = Gc<RefCell<T>>;
+diff --git a/som-interpreter-ast/src/main.rs b/som-interpreter-ast/src/main.rs
+index 6658bd0..2a27b6a 100644
+--- a/som-interpreter-ast/src/main.rs
++++ b/som-interpreter-ast/src/main.rs
+@@ -1,10 +1,11 @@
+ //!
+ //! This is the interpreter for the Simple Object Machine.
+ //!
++#![feature(gc)]
+ #![warn(missing_docs)]
+ 
++use std::gc::Gc;
+ use std::path::PathBuf;
+-use std::rc::Rc;
+ 
+ use anyhow::anyhow;
+ use clap::Parser;
+@@ -17,10 +18,6 @@ use som_interpreter_ast::invokable::Return;
+ use som_interpreter_ast::universe::Universe;
+ use som_interpreter_ast::value::Value;
+ 
+-#[cfg(feature = "jemalloc")]
+-#[global_allocator]
+-static GLOBAL: Jemalloc = Jemalloc;
+-
+ #[derive(Debug, Clone, PartialEq, clap::StructOpt)]
+ #[structopt(about, author)]
+ struct Options {
+@@ -65,7 +62,7 @@ fn main() -> anyhow::Result<()> {
+ 
+             let args = std::iter::once(String::from(file_stem))
+                 .chain(opts.args.iter().cloned())
+-                .map(Rc::new)
++                .map(Gc::new)
+                 .map(Value::String)
+                 .collect();
+ 
+@@ -75,7 +72,7 @@ fn main() -> anyhow::Result<()> {
+ 
+             // let class = universe.load_class_from_path(file)?;
+             // let instance = Instance::from_class(class);
+-            // let instance = Value::Instance(Rc::new(RefCell::new(instance)));
++            // let instance = Value::Instance(Gc::new(RefCell::new(instance)));
+ 
+             // let invokable = instance.lookup_method(&universe, "run").unwrap();
+             // let output = invokable.invoke(&mut universe, vec![instance]);
+diff --git a/som-interpreter-ast/src/method.rs b/som-interpreter-ast/src/method.rs
+index 2238548..d39cf02 100644
+--- a/som-interpreter-ast/src/method.rs
++++ b/som-interpreter-ast/src/method.rs
+@@ -3,7 +3,7 @@ use som_core::ast;
+ use crate::class::Class;
+ use crate::primitives::PrimitiveFn;
+ use crate::universe::Universe;
+-use crate::{SOMRef, SOMWeakRef};
++use crate::SOMRef;
+ 
+ /// The kind of a class method.
+ #[derive(Clone)]
+@@ -27,7 +27,7 @@ impl MethodKind {
+ #[derive(Clone)]
+ pub struct Method {
+     pub kind: MethodKind,
+-    pub holder: SOMWeakRef<Class>,
++    pub holder: Option<SOMRef<Class>>,
+     pub signature: String,
+ }
+ 
+@@ -44,8 +44,8 @@ impl Method {
+         &self.kind
+     }
+ 
+-    pub fn holder(&self) -> &SOMWeakRef<Class> {
+-        &self.holder
++    pub fn holder(&self) -> Option<SOMRef<Class>> {
++        self.holder
+     }
+ 
+     pub fn signature(&self) -> &str {
+diff --git a/som-interpreter-ast/src/primitives/array.rs b/som-interpreter-ast/src/primitives/array.rs
+index 25ae7b9..207834f 100644
+--- a/som-interpreter-ast/src/primitives/array.rs
++++ b/som-interpreter-ast/src/primitives/array.rs
+@@ -1,6 +1,6 @@
+ use std::cell::RefCell;
+ use std::convert::TryFrom;
+-use std::rc::Rc;
++use std::gc::Gc;
+ 
+ use crate::expect_args;
+ use crate::invokable::Return;
+@@ -74,7 +74,7 @@ fn new(_: &mut Universe, args: Vec<Value>) -> Return {
+     ]);
+ 
+     match usize::try_from(count) {
+-        Ok(length) => Return::Local(Value::Array(Rc::new(RefCell::new(vec![
++        Ok(length) => Return::Local(Value::Array(Gc::new(RefCell::new(vec![
+             Value::Nil;
+             length
+         ])))),
+diff --git a/som-interpreter-ast/src/primitives/class.rs b/som-interpreter-ast/src/primitives/class.rs
+index f9125ff..2b6a28e 100644
+--- a/som-interpreter-ast/src/primitives/class.rs
++++ b/som-interpreter-ast/src/primitives/class.rs
+@@ -1,5 +1,5 @@
+ use std::cell::RefCell;
+-use std::rc::Rc;
++use std::gc::Gc;
+ 
+ use crate::class::Class;
+ use crate::expect_args;
+@@ -38,7 +38,7 @@ fn new(_: &mut Universe, args: Vec<Value>) -> Return {
+     ]);
+ 
+     let instance = Instance::from_class(class);
+-    let instance = Rc::new(RefCell::new(instance));
++    let instance = Gc::new(RefCell::new(instance));
+     Return::Local(Value::Instance(instance))
+ }
+ 
+@@ -67,7 +67,7 @@ fn methods(_: &mut Universe, args: Vec<Value>) -> Return {
+         .map(|invokable| Value::Invokable(invokable.clone()))
+         .collect();
+ 
+-    Return::Local(Value::Array(Rc::new(RefCell::new(methods))))
++    Return::Local(Value::Array(Gc::new(RefCell::new(methods))))
+ }
+ 
+ fn fields(universe: &mut Universe, args: Vec<Value>) -> Return {
+@@ -94,7 +94,7 @@ fn fields(universe: &mut Universe, args: Vec<Value>) -> Return {
+ 
+     let fields = gather_locals(universe, class);
+ 
+-    Return::Local(Value::Array(Rc::new(RefCell::new(fields))))
++    Return::Local(Value::Array(Gc::new(RefCell::new(fields))))
+ }
+ 
+ /// Search for an instance primitive matching the given signature.
+diff --git a/som-interpreter-ast/src/primitives/double.rs b/som-interpreter-ast/src/primitives/double.rs
+index 1f121ef..ed64d78 100644
+--- a/som-interpreter-ast/src/primitives/double.rs
++++ b/som-interpreter-ast/src/primitives/double.rs
+@@ -1,4 +1,4 @@
+-use std::rc::Rc;
++use std::gc::Gc;
+ 
+ use num_traits::ToPrimitive;
+ 
+@@ -75,7 +75,7 @@ fn as_string(_: &mut Universe, args: Vec<Value>) -> Return {
+ 
+     let value = promote!(SIGNATURE, value);
+ 
+-    Return::Local(Value::String(Rc::new(value.to_string())))
++    Return::Local(Value::String(Gc::new(value.to_string())))
+ }
+ 
+ fn as_integer(_: &mut Universe, args: Vec<Value>) -> Return {
+diff --git a/som-interpreter-ast/src/primitives/integer.rs b/som-interpreter-ast/src/primitives/integer.rs
+index c98c104..8394a2b 100644
+--- a/som-interpreter-ast/src/primitives/integer.rs
++++ b/som-interpreter-ast/src/primitives/integer.rs
+@@ -1,4 +1,4 @@
+-use std::rc::Rc;
++use std::gc::Gc;
+ 
+ use num_bigint::{BigInt, Sign};
+ use num_traits::ToPrimitive;
+@@ -81,7 +81,7 @@ fn as_string(_: &mut Universe, args: Vec<Value>) -> Return {
+         _ => return Return::Exception(format!("'{}': wrong types", SIGNATURE)),
+     };
+ 
+-    Return::Local(Value::String(Rc::new(value)))
++    Return::Local(Value::String(Gc::new(value)))
+ }
+ 
+ fn as_double(_: &mut Universe, args: Vec<Value>) -> Return {
+diff --git a/som-interpreter-ast/src/primitives/method.rs b/som-interpreter-ast/src/primitives/method.rs
+index e87d7f6..b6262af 100644
+--- a/som-interpreter-ast/src/primitives/method.rs
++++ b/som-interpreter-ast/src/primitives/method.rs
+@@ -18,7 +18,7 @@ fn holder(_: &mut Universe, args: Vec<Value>) -> Return {
+         Value::Invokable(invokable) => invokable,
+     ]);
+ 
+-    match invokable.holder().upgrade() {
++    match invokable.holder() {
+         Some(holder) => Return::Local(Value::Class(holder)),
+         None => Return::Exception(format!(
+             "'{}': method sholder has been collected",
+diff --git a/som-interpreter-ast/src/primitives/string.rs b/som-interpreter-ast/src/primitives/string.rs
+index c9931d1..08cc74f 100644
+--- a/som-interpreter-ast/src/primitives/string.rs
++++ b/som-interpreter-ast/src/primitives/string.rs
+@@ -1,7 +1,7 @@
+ use std::collections::hash_map::DefaultHasher;
+ use std::convert::TryFrom;
++use std::gc::Gc;
+ use std::hash::Hasher;
+-use std::rc::Rc;
+ 
+ use crate::expect_args;
+ use crate::invokable::Return;
+@@ -139,7 +139,7 @@ fn concatenate(universe: &mut Universe, args: Vec<Value>) -> Return {
+         _ => return Return::Exception(format!("'{}': wrong types", SIGNATURE)),
+     };
+ 
+-    Return::Local(Value::String(Rc::new(format!("{}{}", s1, s2))))
++    Return::Local(Value::String(Gc::new(format!("{}{}", s1, s2))))
+ }
+ 
+ fn as_symbol(universe: &mut Universe, args: Vec<Value>) -> Return {
+@@ -200,7 +200,7 @@ fn prim_substring_from_to(universe: &mut Universe, args: Vec<Value>) -> Return {
+         (_, _, _) => return Return::Exception(format!("'{}': wrong types", SIGNATURE)),
+     };
+ 
+-    let string = Rc::new(value.chars().skip(from).take(to - from).collect());
++    let string = Gc::new(value.chars().skip(from).take(to - from).collect());
+ 
+     Return::Local(Value::String(string))
+ }
+diff --git a/som-interpreter-ast/src/primitives/symbol.rs b/som-interpreter-ast/src/primitives/symbol.rs
+index 626a700..057c73e 100644
+--- a/som-interpreter-ast/src/primitives/symbol.rs
++++ b/som-interpreter-ast/src/primitives/symbol.rs
+@@ -1,4 +1,4 @@
+-use std::rc::Rc;
++use std::gc::Gc;
+ 
+ use crate::expect_args;
+ use crate::invokable::Return;
+@@ -17,7 +17,7 @@ fn as_string(universe: &mut Universe, args: Vec<Value>) -> Return {
+         Value::Symbol(sym) => sym,
+     ]);
+ 
+-    Return::Local(Value::String(Rc::new(
++    Return::Local(Value::String(Gc::new(
+         universe.lookup_symbol(sym).to_string(),
+     )))
+ }
+diff --git a/som-interpreter-ast/src/primitives/system.rs b/som-interpreter-ast/src/primitives/system.rs
+index f7cc442..6b465e2 100644
+--- a/som-interpreter-ast/src/primitives/system.rs
++++ b/som-interpreter-ast/src/primitives/system.rs
+@@ -1,6 +1,6 @@
+ use std::convert::TryFrom;
+ use std::fs;
+-use std::rc::Rc;
++use std::gc::Gc;
+ 
+ use crate::expect_args;
+ use crate::frame::FrameKind;
+@@ -42,7 +42,7 @@ fn load_file(universe: &mut Universe, args: Vec<Value>) -> Return {
+     };
+ 
+     match fs::read_to_string(path) {
+-        Ok(value) => Return::Local(Value::String(Rc::new(value))),
++        Ok(value) => Return::Local(Value::String(Gc::new(value))),
+         Err(_) => Return::Local(Value::Nil),
+     }
+ }
+diff --git a/som-interpreter-ast/src/universe.rs b/som-interpreter-ast/src/universe.rs
+index 0b4efa6..a5924cc 100644
+--- a/som-interpreter-ast/src/universe.rs
++++ b/som-interpreter-ast/src/universe.rs
+@@ -2,9 +2,9 @@ use std::cell::RefCell;
+ use std::collections::hash_map::Entry;
+ use std::collections::HashMap;
+ use std::fs;
++use std::gc::Gc;
+ use std::io;
+ use std::path::{Path, PathBuf};
+-use std::rc::Rc;
+ use std::time::Instant;
+ 
+ use anyhow::{anyhow, Error};
+@@ -468,7 +468,7 @@ impl Universe {
+ impl Universe {
+     /// Execute a piece of code within a new stack frame.
+     pub fn with_frame<T>(&mut self, kind: FrameKind, func: impl FnOnce(&mut Self) -> T) -> T {
+-        let frame = Rc::new(RefCell::new(Frame::from_kind(kind)));
++        let frame = Gc::new(RefCell::new(Frame::from_kind(kind)));
+         self.frames.push(frame);
+         let ret = func(self);
+         self.frames.pop();
+@@ -535,7 +535,7 @@ impl Universe {
+ 
+ impl Universe {
+     /// Call `escapedBlock:` on the given value, if it is defined.
+-    pub fn escaped_block(&mut self, value: Value, block: Rc<Block>) -> Option<Return> {
++    pub fn escaped_block(&mut self, value: Value, block: Gc<Block>) -> Option<Return> {
+         let initialize = value.lookup_method(self, "escapedBlock:")?;
+ 
+         Some(initialize.invoke(self, vec![value, Value::Block(block)]))
+@@ -551,7 +551,7 @@ impl Universe {
+         let initialize = value.lookup_method(self, "doesNotUnderstand:arguments:")?;
+         let sym = self.intern_symbol(symbol.as_ref());
+         let sym = Value::Symbol(sym);
+-        let args = Value::Array(Rc::new(RefCell::new(args)));
++        let args = Value::Array(Gc::new(RefCell::new(args)));
+ 
+         Some(initialize.invoke(self, vec![value, sym, args]))
+     }
+@@ -576,7 +576,7 @@ impl Universe {
+     /// Call `System>>#initialize:` with the given name, if it is defined.
+     pub fn initialize(&mut self, args: Vec<Value>) -> Option<Return> {
+         let initialize = Value::System.lookup_method(self, "initialize:")?;
+-        let args = Value::Array(Rc::new(RefCell::new(args)));
++        let args = Value::Array(Gc::new(RefCell::new(args)));
+ 
+         Some(initialize.invoke(self, vec![Value::System, args]))
+     }
+diff --git a/som-interpreter-ast/src/value.rs b/som-interpreter-ast/src/value.rs
+index bd6fa8a..19c4b8c 100644
+--- a/som-interpreter-ast/src/value.rs
++++ b/som-interpreter-ast/src/value.rs
+@@ -1,5 +1,5 @@
+ use std::fmt;
+-use std::rc::Rc;
++use std::gc::Gc;
+ 
+ use num_bigint::BigInt;
+ 
+@@ -29,17 +29,17 @@ pub enum Value {
+     /// An interned symbol value.
+     Symbol(Interned),
+     /// A string value.
+-    String(Rc<String>),
++    String(Gc<String>),
+     /// An array of values.
+     Array(SOMRef<Vec<Self>>),
+     /// A block value, ready to be evaluated.
+-    Block(Rc<Block>),
++    Block(Gc<Block>),
+     /// A generic (non-primitive) class instance.
+     Instance(SOMRef<Instance>),
+     /// A bare class object.
+     Class(SOMRef<Class>),
+     /// A bare invokable.
+-    Invokable(Rc<Method>),
++    Invokable(Gc<Method>),
+ }
+ 
+ impl Value {
+@@ -68,7 +68,7 @@ impl Value {
+         &self,
+         universe: &Universe,
+         signature: impl AsRef<str>,
+-    ) -> Option<Rc<Method>> {
++    ) -> Option<Gc<Method>> {
+         self.class(universe).borrow().lookup_method(signature)
+     }
+ 
+@@ -125,7 +125,6 @@ impl Value {
+             Self::Class(class) => class.borrow().name().to_string(),
+             Self::Invokable(invokable) => invokable
+                 .holder()
+-                .upgrade()
+                 .map(|holder| format!("{}>>#{}", holder.borrow().name(), invokable.signature()))
+                 .unwrap_or_else(|| format!("??>>#{}", invokable.signature())),
+         }
+@@ -147,12 +146,12 @@ impl PartialEq for Value {
+                 a.eq(&BigInt::from(*b))
+             }
+             (Self::Symbol(a), Self::Symbol(b)) => a.eq(b),
+-            (Self::String(a), Self::String(b)) => Rc::ptr_eq(a, b),
+-            (Self::Array(a), Self::Array(b)) => Rc::ptr_eq(a, b),
+-            (Self::Instance(a), Self::Instance(b)) => Rc::ptr_eq(a, b),
+-            (Self::Class(a), Self::Class(b)) => Rc::ptr_eq(a, b),
+-            (Self::Block(a), Self::Block(b)) => Rc::ptr_eq(a, b),
+-            (Self::Invokable(a), Self::Invokable(b)) => Rc::ptr_eq(a, b),
++            (Self::String(a), Self::String(b)) => Gc::ptr_eq(a, b),
++            (Self::Array(a), Self::Array(b)) => Gc::ptr_eq(a, b),
++            (Self::Instance(a), Self::Instance(b)) => Gc::ptr_eq(a, b),
++            (Self::Class(a), Self::Class(b)) => Gc::ptr_eq(a, b),
++            (Self::Block(a), Self::Block(b)) => Gc::ptr_eq(a, b),
++            (Self::Invokable(a), Self::Invokable(b)) => Gc::ptr_eq(a, b),
+             _ => false,
+         }
+     }
+@@ -176,7 +175,6 @@ impl fmt::Debug for Value {
+             Self::Invokable(val) => {
+                 let signature = val
+                     .holder()
+-                    .upgrade()
+                     .map(|holder| format!("{}>>#{}", holder.borrow().name(), val.signature()))
+                     .unwrap_or_else(|| format!("??>>#{}", val.signature()));
+                 f.debug_tuple("Invokable").field(&signature).finish()
+diff --git a/som-interpreter-bc/Cargo.toml b/som-interpreter-bc/Cargo.toml
+index 21f32c1..ab30b88 100644
+--- a/som-interpreter-bc/Cargo.toml
++++ b/som-interpreter-bc/Cargo.toml
+@@ -7,6 +7,9 @@ edition = "2018"
+ publish = false
+ license = "MIT OR Apache-2.0"
+ 
++[lib]
++doctest = false
++
+ [dependencies]
+ # internal
+ som-core = { path = "../som-core", version = "0.1.0" }
+diff --git a/som-interpreter-bc/README.md b/som-interpreter-bc/README.md
+index 48a6539..57f5fa0 100644
+--- a/som-interpreter-bc/README.md
++++ b/som-interpreter-bc/README.md
+@@ -5,4 +5,4 @@ This is the interpreter for the Simple Object Machine.
+ 
+ It is bytecode-based, in that it works by compiling nodes from the Abstract Syntax Tree from **`som-core`** into stack-based bytecode instructions and then executing them.  
+ 
+-Resources are managed and tracked through reference-counting (using Rust's **`Rc`**/**`Weak`** types).  
++Resources are managed and tracked through reference-counting (using Rust's **`Gc`**/**`Weak`** types).
+diff --git a/som-interpreter-bc/src/block.rs b/som-interpreter-bc/src/block.rs
+index d4719cc..b4b2400 100644
+--- a/som-interpreter-bc/src/block.rs
++++ b/som-interpreter-bc/src/block.rs
+@@ -1,6 +1,6 @@
+ use std::cell::RefCell;
+ use std::fmt;
+-use std::rc::Rc;
++use std::gc::Gc;
+ 
+ use som_core::bytecode::Bytecode;
+ 
+@@ -18,7 +18,7 @@ pub struct BlockInfo {
+     pub literals: Vec<Literal>,
+     pub body: Vec<Bytecode>,
+     pub nb_params: usize,
+-    pub inline_cache: RefCell<Vec<Option<(*const Class, Rc<Method>)>>>,
++    pub inline_cache: RefCell<Vec<Option<(*const Class, Gc<Method>)>>>,
+ }
+ 
+ /// Represents an executable block.
+@@ -26,7 +26,7 @@ pub struct BlockInfo {
+ pub struct Block {
+     /// Reference to the captured stack frame.
+     pub frame: Option<SOMRef<Frame>>,
+-    pub blk_info: Rc<BlockInfo>,
++    pub blk_info: Gc<BlockInfo>,
+ }
+ 
+ impl Block {
+diff --git a/som-interpreter-bc/src/class.rs b/som-interpreter-bc/src/class.rs
+index 2f41b74..bdb5ad3 100644
+--- a/som-interpreter-bc/src/class.rs
++++ b/som-interpreter-bc/src/class.rs
+@@ -1,36 +1,29 @@
+ use std::fmt;
+-use std::rc::Rc;
++use std::gc::Gc;
+ 
+ use indexmap::IndexMap;
+ 
+ use crate::interner::Interned;
+ use crate::method::Method;
+ use crate::value::Value;
+-use crate::{SOMRef, SOMWeakRef};
+-
+-/// A reference that may be either weak or owned/strong.
+-#[derive(Debug, Clone)]
+-pub enum MaybeWeak<A> {
+-    /// An owned reference.
+-    Strong(SOMRef<A>),
+-    /// A weak reference.
+-    Weak(SOMWeakRef<A>),
+-}
++use crate::SOMRef;
+ 
++// use std::gc::NonFinalizable;
++use std::gc::FinalizeUnchecked;
+ /// Represents a loaded class.
+ #[derive(Clone)]
+ pub struct Class {
+     /// The class' name.
+     pub name: String,
+     /// The class of this class.
+-    pub class: MaybeWeak<Class>,
++    pub class: Option<SOMRef<Class>>,
+     /// The superclass of this class.
+     // TODO: Should probably be `Option<SOMRef<Class>>`.
+-    pub super_class: SOMWeakRef<Class>,
++    pub super_class: Option<SOMRef<Class>>,
+     /// The class' locals.
+-    pub locals: IndexMap<Interned, Value>,
++    pub locals: FinalizeUnchecked<IndexMap<Interned, Value>>,
+     /// The class' methods/invokables.
+-    pub methods: IndexMap<Interned, Rc<Method>>,
++    pub methods: FinalizeUnchecked<IndexMap<Interned, Gc<Method>>>,
+     /// Is this class a static one ?
+     pub is_static: bool,
+ }
+@@ -43,42 +36,35 @@ impl Class {
+ 
+     /// Get the class of this class.
+     pub fn class(&self) -> SOMRef<Self> {
+-        match self.class {
+-            MaybeWeak::Weak(ref weak) => weak.upgrade().unwrap_or_else(|| {
+-                panic!("superclass dropped, cannot upgrade ref ({})", self.name())
+-            }),
+-            MaybeWeak::Strong(ref owned) => owned.clone(),
+-        }
++        self.class.unwrap()
+     }
+ 
+     /// Set the class of this class (as a weak reference).
+     pub fn set_class(&mut self, class: &SOMRef<Self>) {
+-        self.class = MaybeWeak::Weak(Rc::downgrade(class));
++        self.class = Some(*class);
+     }
+ 
+     /// Set the class of this class (as a strong reference).
+     pub fn set_class_owned(&mut self, class: &SOMRef<Self>) {
+-        self.class = MaybeWeak::Strong(class.clone());
++        self.class = Some(*class);
+     }
+ 
+     /// Get the superclass of this class.
+     pub fn super_class(&self) -> Option<SOMRef<Self>> {
+-        self.super_class.upgrade()
++        self.super_class
+     }
+ 
+     /// Set the superclass of this class (as a weak reference).
+     pub fn set_super_class(&mut self, class: &SOMRef<Self>) {
+-        self.super_class = Rc::downgrade(class);
++        self.super_class = Some(*class);
+     }
+ 
+     /// Search for a given method within this class.
+-    pub fn lookup_method(&self, signature: Interned) -> Option<Rc<Method>> {
+-        self.methods.get(&signature).cloned().or_else(|| {
+-            self.super_class
+-                .upgrade()?
+-                .borrow()
+-                .lookup_method(signature)
+-        })
++    pub fn lookup_method(&self, signature: Interned) -> Option<Gc<Method>> {
++        self.methods
++            .get(&signature)
++            .cloned()
++            .or_else(|| self.super_class.unwrap().borrow().lookup_method(signature))
+     }
+ 
+     /// Search for a local binding.
+diff --git a/som-interpreter-bc/src/compiler.rs b/som-interpreter-bc/src/compiler.rs
+index 0692ef8..a5e3027 100644
+--- a/som-interpreter-bc/src/compiler.rs
++++ b/som-interpreter-bc/src/compiler.rs
+@@ -2,8 +2,8 @@
+ //! This is the bytecode compiler for the Simple Object Machine.
+ //!
+ use std::cell::RefCell;
++use std::gc::Gc;
+ use std::hash::{Hash, Hasher};
+-use std::rc::{Rc, Weak};
+ 
+ use indexmap::{IndexMap, IndexSet};
+ use num_bigint::BigInt;
+@@ -12,22 +12,23 @@ use som_core::ast;
+ use som_core::bytecode::Bytecode;
+ 
+ use crate::block::{Block, BlockInfo};
+-use crate::class::{Class, MaybeWeak};
++use crate::class::Class;
+ use crate::interner::{Interned, Interner};
+ use crate::method::{Method, MethodEnv, MethodKind};
+ use crate::primitives;
+ use crate::value::Value;
+ use crate::SOMRef;
++use std::gc::FinalizeUnchecked;
+ 
+ #[derive(Debug, Clone)]
+ pub enum Literal {
+     Symbol(Interned),
+-    String(Rc<String>),
++    String(Gc<String>),
+     Double(f64),
+     Integer(i64),
+     BigInteger(BigInt),
+     Array(Vec<u8>),
+-    Block(Rc<Block>),
++    Block(Gc<Block>),
+ }
+ 
+ impl PartialEq for Literal {
+@@ -39,7 +40,7 @@ impl PartialEq for Literal {
+             (Literal::Integer(val1), Literal::Integer(val2)) => val1.eq(val2),
+             (Literal::BigInteger(val1), Literal::BigInteger(val2)) => val1.eq(val2),
+             (Literal::Array(val1), Literal::Array(val2)) => val1.eq(val2),
+-            (Literal::Block(val1), Literal::Block(val2)) => Rc::ptr_eq(val1, val2),
++            (Literal::Block(val1), Literal::Block(val2)) => Gc::ptr_eq(val1, val2),
+             _ => false,
+         }
+     }
+@@ -359,7 +360,7 @@ impl MethodCodegen for ast::Expression {
+                         ast::Literal::Symbol(val) => {
+                             Literal::Symbol(ctxt.intern_symbol(val.as_str()))
+                         }
+-                        ast::Literal::String(val) => Literal::String(Rc::new(val.clone())),
++                        ast::Literal::String(val) => Literal::String(Gc::new(val.clone())),
+                         ast::Literal::Double(val) => Literal::Double(*val),
+                         ast::Literal::Integer(val) => Literal::Integer(*val),
+                         ast::Literal::BigInteger(val) => Literal::BigInteger(val.parse().unwrap()),
+@@ -396,7 +397,7 @@ impl MethodCodegen for ast::Expression {
+             }
+             ast::Expression::Block(val) => {
+                 let block = compile_block(ctxt.as_gen_ctxt(), val)?;
+-                let block = Rc::new(block);
++                let block = Gc::new(block);
+                 let block = Literal::Block(block);
+                 let idx = ctxt.push_literal(block);
+                 ctxt.push_instr(Bytecode::PushBlock(idx as u8));
+@@ -409,7 +410,7 @@ impl MethodCodegen for ast::Expression {
+ struct ClassGenCtxt<'a> {
+     pub name: String,
+     pub fields: IndexSet<Interned>,
+-    pub methods: IndexMap<Interned, Rc<Method>>,
++    pub methods: IndexMap<Interned, Gc<Method>>,
+     pub interner: &'a mut Interner,
+ }
+ 
+@@ -499,7 +500,7 @@ fn compile_method(outer: &mut dyn GenCtxt, defn: &ast::MethodDef) -> Option<Meth
+                 })
+             }
+         },
+-        holder: Weak::new(),
++        holder: None,
+         signature: ctxt.signature,
+     };
+ 
+@@ -544,7 +545,7 @@ fn compile_block(outer: &mut dyn GenCtxt, defn: &ast::Block) -> Option<Block> {
+ 
+     let block = Block {
+         frame,
+-        blk_info: Rc::new(BlockInfo {
++        blk_info: Gc::new(BlockInfo {
+             locals,
+             literals,
+             body,
+@@ -593,20 +594,20 @@ pub fn compile_class(
+         interner,
+     };
+ 
+-    let static_class = Rc::new(RefCell::new(Class {
++    let static_class = Gc::new(RefCell::new(Class {
+         name: static_class_ctxt.name.clone(),
+-        class: MaybeWeak::Weak(Weak::new()),
+-        super_class: Weak::new(),
+-        locals: IndexMap::new(),
+-        methods: IndexMap::new(),
++        class: None,
++        super_class: None,
++        locals: unsafe { FinalizeUnchecked::new(IndexMap::new()) },
++        methods: unsafe { FinalizeUnchecked::new(IndexMap::new()) },
+         is_static: true,
+     }));
+ 
+     for method in &defn.static_methods {
+         let signature = static_class_ctxt.interner.intern(method.signature.as_str());
+         let mut method = compile_method(&mut static_class_ctxt, method)?;
+-        method.holder = Rc::downgrade(&static_class);
+-        static_class_ctxt.methods.insert(signature, Rc::new(method));
++        method.holder = Some(static_class);
++        static_class_ctxt.methods.insert(signature, Gc::new(method));
+     }
+ 
+     if let Some(primitives) = primitives::get_class_primitives(&defn.name) {
+@@ -622,20 +623,24 @@ pub fn compile_class(
+             let method = Method {
+                 signature: signature.to_string(),
+                 kind: MethodKind::Primitive(primitive),
+-                holder: Rc::downgrade(&static_class),
++                holder: Some(static_class),
+             };
+             let signature = static_class_ctxt.interner.intern(signature);
+-            static_class_ctxt.methods.insert(signature, Rc::new(method));
++            static_class_ctxt.methods.insert(signature, Gc::new(method));
+         }
+     }
+ 
+     let mut static_class_mut = static_class.borrow_mut();
+-    static_class_mut.locals = static_class_ctxt
+-        .fields
+-        .into_iter()
+-        .map(|name| (name, Value::Nil))
+-        .collect();
+-    static_class_mut.methods = static_class_ctxt.methods;
++    static_class_mut.locals = unsafe {
++        FinalizeUnchecked::new(
++            static_class_ctxt
++                .fields
++                .into_iter()
++                .map(|name| (name, Value::Nil))
++                .collect(),
++        )
++    };
++    static_class_mut.methods = unsafe { FinalizeUnchecked::new(static_class_ctxt.methods) };
+     drop(static_class_mut);
+ 
+     // for method in static_class.borrow().methods.values() {
+@@ -672,12 +677,12 @@ pub fn compile_class(
+         interner,
+     };
+ 
+-    let instance_class = Rc::new(RefCell::new(Class {
++    let instance_class = Gc::new(RefCell::new(Class {
+         name: instance_class_ctxt.name.clone(),
+-        class: MaybeWeak::Strong(static_class.clone()),
+-        super_class: Weak::new(),
+-        locals: IndexMap::new(),
+-        methods: IndexMap::new(),
++        class: Some(static_class),
++        super_class: None,
++        locals: unsafe { FinalizeUnchecked::new(IndexMap::new()) },
++        methods: unsafe { FinalizeUnchecked::new(IndexMap::new()) },
+         is_static: false,
+     }));
+ 
+@@ -686,10 +691,10 @@ pub fn compile_class(
+             .interner
+             .intern(method.signature.as_str());
+         let mut method = compile_method(&mut instance_class_ctxt, method)?;
+-        method.holder = Rc::downgrade(&instance_class);
++        method.holder = Some(instance_class);
+         instance_class_ctxt
+             .methods
+-            .insert(signature, Rc::new(method));
++            .insert(signature, Gc::new(method));
+     }
+ 
+     if let Some(primitives) = primitives::get_instance_primitives(&defn.name) {
+@@ -705,22 +710,26 @@ pub fn compile_class(
+             let method = Method {
+                 signature: signature.to_string(),
+                 kind: MethodKind::Primitive(primitive),
+-                holder: Rc::downgrade(&instance_class),
++                holder: Some(instance_class),
+             };
+             let signature = instance_class_ctxt.interner.intern(signature);
+             instance_class_ctxt
+                 .methods
+-                .insert(signature, Rc::new(method));
++                .insert(signature, Gc::new(method));
+         }
+     }
+ 
+     let mut instance_class_mut = instance_class.borrow_mut();
+-    instance_class_mut.locals = instance_class_ctxt
+-        .fields
+-        .into_iter()
+-        .map(|name| (name, Value::Nil))
+-        .collect();
+-    instance_class_mut.methods = instance_class_ctxt.methods;
++    instance_class_mut.locals = unsafe {
++        FinalizeUnchecked::new(
++            instance_class_ctxt
++                .fields
++                .into_iter()
++                .map(|name| (name, Value::Nil))
++                .collect(),
++        )
++    };
++    instance_class_mut.methods = unsafe { FinalizeUnchecked::new(instance_class_ctxt.methods) };
+     drop(instance_class_mut);
+ 
+     // for method in instance_class.borrow().methods.values() {
+diff --git a/som-interpreter-bc/src/frame.rs b/som-interpreter-bc/src/frame.rs
+index c9f3a07..aab4856 100644
+--- a/som-interpreter-bc/src/frame.rs
++++ b/som-interpreter-bc/src/frame.rs
+@@ -1,4 +1,4 @@
+-use std::rc::Rc;
++use std::gc::Gc;
+ 
+ use som_core::bytecode::Bytecode;
+ 
+@@ -15,14 +15,14 @@ pub enum FrameKind {
+     /// A frame created from a block evaluation.
+     Block {
+         /// The block instance for the current frame.
+-        block: Rc<Block>,
++        block: Gc<Block>,
+     },
+     /// A frame created from a method invocation.
+     Method {
+         /// The holder of the current method (used for lexical self/super).
+         holder: SOMRef<Class>,
+         /// The current method.
+-        method: Rc<Method>,
++        method: Gc<Method>,
+         /// The self value.
+         self_value: Value,
+     },
+@@ -98,7 +98,7 @@ impl Frame {
+     }
+ 
+     /// Get the current method itself.
+-    pub fn get_method(&self) -> Rc<Method> {
++    pub fn get_method(&self) -> Gc<Method> {
+         match &self.kind {
+             FrameKind::Method { method, .. } => method.clone(),
+             FrameKind::Block { block, .. } => block.frame.as_ref().unwrap().borrow().get_method(),
+diff --git a/som-interpreter-bc/src/hashcode.rs b/som-interpreter-bc/src/hashcode.rs
+index 212fc21..e84bb2b 100644
+--- a/som-interpreter-bc/src/hashcode.rs
++++ b/som-interpreter-bc/src/hashcode.rs
+@@ -100,7 +100,7 @@ impl Hash for Block {
+ 
+ impl Hash for Method {
+     fn hash<H: Hasher>(&self, hasher: &mut H) {
+-        if let Some(holder) = self.holder().upgrade() {
++        if let Some(holder) = self.holder() {
+             holder.borrow().hash(hasher);
+         } else {
+             hasher.write(b"??");
+diff --git a/som-interpreter-bc/src/instance.rs b/som-interpreter-bc/src/instance.rs
+index a8f61ee..e73656d 100644
+--- a/som-interpreter-bc/src/instance.rs
++++ b/som-interpreter-bc/src/instance.rs
+@@ -13,6 +13,9 @@ pub struct Instance {
+     pub locals: Vec<Value>,
+ }
+ 
++unsafe impl std::gc::FinalizerOptional for Instance {}
++unsafe impl core::marker::FinalizerSafe for Instance {}
++
+ impl Instance {
+     /// Construct an instance for a given class.
+     pub fn from_class(class: SOMRef<Class>) -> Self {
+diff --git a/som-interpreter-bc/src/interpreter.rs b/som-interpreter-bc/src/interpreter.rs
+index 5ee4521..cda4c2b 100644
+--- a/som-interpreter-bc/src/interpreter.rs
++++ b/som-interpreter-bc/src/interpreter.rs
+@@ -1,5 +1,5 @@
+ use std::cell::RefCell;
+-use std::rc::Rc;
++use std::gc::Gc;
+ use std::time::Instant;
+ 
+ use som_core::bytecode::Bytecode;
+@@ -83,7 +83,7 @@ impl Interpreter {
+     }
+ 
+     pub fn push_frame(&mut self, kind: FrameKind) -> SOMRef<Frame> {
+-        let frame = Rc::new(RefCell::new(Frame::from_kind(kind)));
++        let frame = Gc::new(RefCell::new(Frame::from_kind(kind)));
+         self.frames.push(frame.clone());
+         frame
+     }
+@@ -168,8 +168,8 @@ impl Interpreter {
+                         Literal::Block(blk) => Block::clone(&blk),
+                         _ => return None,
+                     };
+-                    block.frame.replace(Rc::clone(&frame));
+-                    self.stack.push(Value::Block(Rc::new(block)));
++                    block.frame.replace(Gc::clone(&frame));
++                    self.stack.push(Value::Block(Gc::new(block)));
+                 }
+                 Bytecode::PushConstant(idx) => {
+                     let literal = frame.borrow().lookup_constant(idx as usize).unwrap();
+@@ -299,7 +299,7 @@ impl Interpreter {
+                         .frames
+                         .iter()
+                         .rev()
+-                        .position(|live_frame| Rc::ptr_eq(&live_frame, &method_frame));
++                        .position(|live_frame| Gc::ptr_eq(&live_frame, &method_frame));
+ 
+                     if let Some(count) = escaped_frames {
+                         (0..count).for_each(|_| self.pop_frame());
+@@ -328,7 +328,7 @@ impl Interpreter {
+         fn do_send(
+             interpreter: &mut Interpreter,
+             universe: &mut Universe,
+-            method: Option<Rc<Method>>,
++            method: Option<Gc<Method>>,
+             symbol: Interned,
+             nb_params: usize,
+         ) {
+@@ -364,7 +364,7 @@ impl Interpreter {
+ 
+                     args.reverse();
+ 
+-                    let holder = method.holder.upgrade().unwrap();
++                    let holder = method.holder.unwrap();
+                     let frame = interpreter.push_frame(FrameKind::Method {
+                         self_value,
+                         method,
+@@ -392,7 +392,7 @@ impl Interpreter {
+             class: &SOMRef<Class>,
+             signature: Interned,
+             bytecode_idx: usize,
+-        ) -> Option<Rc<Method>> {
++        ) -> Option<Gc<Method>> {
+             match frame.borrow().kind() {
+                 FrameKind::Block { block } => {
+                     let mut inline_cache = block.blk_info.inline_cache.borrow_mut();
+@@ -404,7 +404,7 @@ impl Interpreter {
+ 
+                     match maybe_found {
+                         Some((receiver, method)) if *receiver == class.as_ptr() => {
+-                            Some(Rc::clone(method))
++                            Some(Gc::clone(method))
+                         }
+                         place @ None => {
+                             let found = class.borrow().lookup_method(signature);
+@@ -427,7 +427,7 @@ impl Interpreter {
+ 
+                         match maybe_found {
+                             Some((receiver, method)) if *receiver == class.as_ptr() => {
+-                                Some(Rc::clone(method))
++                                Some(Gc::clone(method))
+                             }
+                             place @ None => {
+                                 let found = class.borrow().lookup_method(signature);
+@@ -463,7 +463,7 @@ impl Interpreter {
+                         })
+                         .collect::<Option<Vec<_>>>()
+                         .unwrap();
+-                    Value::Array(Rc::new(RefCell::new(arr)))
++                    Value::Array(Gc::new(RefCell::new(arr)))
+                 }
+                 Literal::Block(val) => Value::Block(val),
+             };
+diff --git a/som-interpreter-bc/src/lib.rs b/som-interpreter-bc/src/lib.rs
+index 2ede99f..1696f3c 100644
+--- a/som-interpreter-bc/src/lib.rs
++++ b/som-interpreter-bc/src/lib.rs
+@@ -2,8 +2,13 @@
+ //! This is the interpreter for the Simple Object Machine.
+ //!
+ 
++#![feature(gc)]
+ use std::cell::RefCell;
+-use std::rc::{Rc, Weak};
++use std::gc::Gc;
++use std::gc::GcAllocator;
++
++#[global_allocator]
++static A: GcAllocator = GcAllocator;
+ 
+ /// Facilities for manipulating blocks.
+ pub mod block;
+@@ -33,6 +38,4 @@ pub mod universe;
+ pub mod value;
+ 
+ /// A strong and owning reference to an object.
+-pub type SOMRef<T> = Rc<RefCell<T>>;
+-/// A weak reference to an object.
+-pub type SOMWeakRef<T> = Weak<RefCell<T>>;
++pub type SOMRef<T> = Gc<RefCell<T>>;
+diff --git a/som-interpreter-bc/src/main.rs b/som-interpreter-bc/src/main.rs
+index 62aa750..951bf39 100644
+--- a/som-interpreter-bc/src/main.rs
++++ b/som-interpreter-bc/src/main.rs
+@@ -1,10 +1,11 @@
+ //!
+ //! This is the interpreter for the Simple Object Machine.
+ //!
++#![feature(gc)]
+ #![warn(missing_docs)]
+ 
++use std::gc::Gc;
+ use std::path::PathBuf;
+-use std::rc::Rc;
+ 
+ use anyhow::{bail, Context};
+ use clap::Parser;
+@@ -19,10 +20,6 @@ use som_interpreter_bc::method::{Method, MethodKind};
+ use som_interpreter_bc::universe::Universe;
+ use som_interpreter_bc::value::Value;
+ 
+-#[cfg(feature = "jemalloc")]
+-#[global_allocator]
+-static GLOBAL: Jemalloc = Jemalloc;
+-
+ #[derive(Debug, Clone, PartialEq, clap::StructOpt)]
+ #[clap(about, author)]
+ struct Options {
+@@ -74,7 +71,7 @@ fn main() -> anyhow::Result<()> {
+ 
+     let args = std::iter::once(String::from(file_stem))
+         .chain(opts.args.iter().cloned())
+-        .map(Rc::new)
++        .map(Gc::new)
+         .map(Value::String)
+         .collect();
+ 
+@@ -86,7 +83,7 @@ fn main() -> anyhow::Result<()> {
+ 
+     // let class = universe.load_class_from_path(file)?;
+     // let instance = som_interpreter::instance::Instance::from_class(class);
+-    // let instance = Value::Instance(Rc::new(std::cell::RefCell::new(instance)));
++    // let instance = Value::Instance(Gc::new(std::cell::RefCell::new(instance)));
+ 
+     // let invokable = instance.lookup_method(&universe, "run").unwrap();
+     // let output = som_interpreter::invokable::Invoke::invoke(invokable.as_ref(), &mut universe, vec![instance]);
+@@ -119,7 +116,7 @@ fn disassemble_class(opts: Options) -> anyhow::Result<()> {
+ 
+     let class = universe.load_class(file_stem)?;
+ 
+-    let methods: Vec<Rc<Method>> = if opts.args.is_empty() {
++    let methods: Vec<Gc<Method>> = if opts.args.is_empty() {
+         class.borrow().methods.values().cloned().collect()
+     } else {
+         opts.args
+diff --git a/som-interpreter-bc/src/method.rs b/som-interpreter-bc/src/method.rs
+index 3563a3c..c7827d4 100644
+--- a/som-interpreter-bc/src/method.rs
++++ b/som-interpreter-bc/src/method.rs
+@@ -1,6 +1,6 @@
+ use std::cell::RefCell;
+ use std::fmt;
+-use std::rc::Rc;
++use std::gc::Gc;
+ 
+ use som_core::bytecode::Bytecode;
+ 
+@@ -12,14 +12,14 @@ use crate::interpreter::Interpreter;
+ use crate::primitives::PrimitiveFn;
+ use crate::universe::Universe;
+ use crate::value::Value;
+-use crate::{SOMRef, SOMWeakRef};
++use crate::SOMRef;
+ 
+ #[derive(Clone)]
+ pub struct MethodEnv {
+     pub locals: Vec<Interned>,
+     pub literals: Vec<Literal>,
+     pub body: Vec<Bytecode>,
+-    pub inline_cache: RefCell<Vec<Option<(*const Class, Rc<Method>)>>>,
++    pub inline_cache: RefCell<Vec<Option<(*const Class, Gc<Method>)>>>,
+ }
+ 
+ /// The kind of a class method.
+@@ -44,7 +44,7 @@ impl MethodKind {
+ #[derive(Clone)]
+ pub struct Method {
+     pub kind: MethodKind,
+-    pub holder: SOMWeakRef<Class>,
++    pub holder: Option<SOMRef<Class>>,
+     pub signature: String,
+ }
+ 
+@@ -61,8 +61,8 @@ impl Method {
+         &self.kind
+     }
+ 
+-    pub fn holder(&self) -> &SOMWeakRef<Class> {
+-        &self.holder
++    pub fn holder(&self) -> Option<SOMRef<Class>> {
++        self.holder
+     }
+ 
+     pub fn signature(&self) -> &str {
+@@ -75,7 +75,7 @@ impl Method {
+     }
+ 
+     pub fn invoke(
+-        self: Rc<Self>,
++        self: Gc<Self>,
+         interpreter: &mut Interpreter,
+         universe: &mut Universe,
+         receiver: Value,
+@@ -83,7 +83,7 @@ impl Method {
+     ) {
+         match self.kind() {
+             MethodKind::Defined(_) => {
+-                let holder = self.holder().upgrade().unwrap();
++                let holder = self.holder().unwrap();
+                 let kind = FrameKind::Method {
+                     method: self,
+                     holder,
+@@ -109,7 +109,7 @@ impl fmt::Display for Method {
+         write!(
+             f,
+             "#{}>>#{} = ",
+-            self.holder.upgrade().unwrap().borrow().name(),
++            self.holder.unwrap().borrow().name(),
+             self.signature
+         )?;
+         match &self.kind {
+diff --git a/som-interpreter-bc/src/primitives/array.rs b/som-interpreter-bc/src/primitives/array.rs
+index 35e02fb..1150a33 100644
+--- a/som-interpreter-bc/src/primitives/array.rs
++++ b/som-interpreter-bc/src/primitives/array.rs
+@@ -1,6 +1,6 @@
+ use std::cell::RefCell;
+ use std::convert::TryFrom;
+-use std::rc::Rc;
++use std::gc::Gc;
+ 
+ use crate::interpreter::Interpreter;
+ use crate::primitives::PrimitiveFn;
+@@ -76,7 +76,7 @@ fn new(interpreter: &mut Interpreter, _: &mut Universe) {
+     match usize::try_from(count) {
+         Ok(length) => interpreter
+             .stack
+-            .push(Value::Array(Rc::new(RefCell::new(vec![
++            .push(Value::Array(Gc::new(RefCell::new(vec![
+                 Value::Nil;
+                 length
+             ])))),
+diff --git a/som-interpreter-bc/src/primitives/class.rs b/som-interpreter-bc/src/primitives/class.rs
+index ab95173..3ea659a 100644
+--- a/som-interpreter-bc/src/primitives/class.rs
++++ b/som-interpreter-bc/src/primitives/class.rs
+@@ -1,5 +1,5 @@
+ use std::cell::RefCell;
+-use std::rc::Rc;
++use std::gc::Gc;
+ 
+ use crate::instance::Instance;
+ use crate::interpreter::Interpreter;
+@@ -38,7 +38,7 @@ fn new(interpreter: &mut Interpreter, _: &mut Universe) {
+     ]);
+ 
+     let instance = Instance::from_class(class);
+-    let instance = Rc::new(RefCell::new(instance));
++    let instance = Gc::new(RefCell::new(instance));
+     interpreter.stack.push(Value::Instance(instance));
+ }
+ 
+@@ -69,7 +69,7 @@ fn methods(interpreter: &mut Interpreter, _: &mut Universe) {
+ 
+     interpreter
+         .stack
+-        .push(Value::Array(Rc::new(RefCell::new(methods))));
++        .push(Value::Array(Gc::new(RefCell::new(methods))));
+ }
+ 
+ fn fields(interpreter: &mut Interpreter, _: &mut Universe) {
+@@ -79,7 +79,7 @@ fn fields(interpreter: &mut Interpreter, _: &mut Universe) {
+         Value::Class(class) => class,
+     ]);
+ 
+-    interpreter.stack.push(Value::Array(Rc::new(RefCell::new(
++    interpreter.stack.push(Value::Array(Gc::new(RefCell::new(
+         class
+             .borrow()
+             .locals
+diff --git a/som-interpreter-bc/src/primitives/double.rs b/som-interpreter-bc/src/primitives/double.rs
+index cf6b465..06f56d3 100644
+--- a/som-interpreter-bc/src/primitives/double.rs
++++ b/som-interpreter-bc/src/primitives/double.rs
+@@ -1,4 +1,4 @@
+-use std::rc::Rc;
++use std::gc::Gc;
+ 
+ use num_traits::ToPrimitive;
+ 
+@@ -75,7 +75,7 @@ fn as_string(interpreter: &mut Interpreter, _: &mut Universe) {
+ 
+     interpreter
+         .stack
+-        .push(Value::String(Rc::new(value.to_string())));
++        .push(Value::String(Gc::new(value.to_string())));
+ }
+ 
+ fn as_integer(interpreter: &mut Interpreter, _: &mut Universe) {
+diff --git a/som-interpreter-bc/src/primitives/integer.rs b/som-interpreter-bc/src/primitives/integer.rs
+index 8976595..4357130 100644
+--- a/som-interpreter-bc/src/primitives/integer.rs
++++ b/som-interpreter-bc/src/primitives/integer.rs
+@@ -1,4 +1,4 @@
+-use std::rc::Rc;
++use std::gc::Gc;
+ 
+ use num_bigint::{BigInt, Sign};
+ use num_traits::ToPrimitive;
+@@ -85,7 +85,7 @@ fn as_string(interpreter: &mut Interpreter, _: &mut Universe) {
+     };
+ 
+     {
+-        interpreter.stack.push(Value::String(Rc::new(value)));
++        interpreter.stack.push(Value::String(Gc::new(value)));
+         return;
+     }
+ }
+diff --git a/som-interpreter-bc/src/primitives/method.rs b/som-interpreter-bc/src/primitives/method.rs
+index 8048510..1d35fd8 100644
+--- a/som-interpreter-bc/src/primitives/method.rs
++++ b/som-interpreter-bc/src/primitives/method.rs
+@@ -18,7 +18,7 @@ fn holder(interpreter: &mut Interpreter, _: &mut Universe) {
+         Value::Invokable(invokable) => invokable,
+     ]);
+ 
+-    match invokable.holder().upgrade() {
++    match invokable.holder() {
+         Some(holder) => interpreter.stack.push(Value::Class(holder)),
+         None => panic!("'{}': method sholder has been collected", SIGNATURE),
+     }
+diff --git a/som-interpreter-bc/src/primitives/string.rs b/som-interpreter-bc/src/primitives/string.rs
+index 3e74547..e44408e 100644
+--- a/som-interpreter-bc/src/primitives/string.rs
++++ b/som-interpreter-bc/src/primitives/string.rs
+@@ -1,7 +1,7 @@
+ use std::collections::hash_map::DefaultHasher;
+ use std::convert::TryFrom;
++use std::gc::Gc;
+ use std::hash::Hasher;
+-use std::rc::Rc;
+ 
+ use crate::interpreter::Interpreter;
+ use crate::primitives::PrimitiveFn;
+@@ -143,7 +143,7 @@ fn concatenate(interpreter: &mut Interpreter, universe: &mut Universe) {
+ 
+     interpreter
+         .stack
+-        .push(Value::String(Rc::new(format!("{}{}", s1, s2))))
++        .push(Value::String(Gc::new(format!("{}{}", s1, s2))))
+ }
+ 
+ fn as_symbol(interpreter: &mut Interpreter, universe: &mut Universe) {
+@@ -206,7 +206,7 @@ fn prim_substring_from_to(interpreter: &mut Interpreter, universe: &mut Universe
+         (_, _, _) => panic!("'{}': wrong types", SIGNATURE),
+     };
+ 
+-    let string = Rc::new(value.chars().skip(from).take(to - from).collect());
++    let string = Gc::new(value.chars().skip(from).take(to - from).collect());
+ 
+     interpreter.stack.push(Value::String(string))
+ }
+diff --git a/som-interpreter-bc/src/primitives/symbol.rs b/som-interpreter-bc/src/primitives/symbol.rs
+index f453988..0895ba9 100644
+--- a/som-interpreter-bc/src/primitives/symbol.rs
++++ b/som-interpreter-bc/src/primitives/symbol.rs
+@@ -1,4 +1,4 @@
+-use std::rc::Rc;
++use std::gc::Gc;
+ 
+ use crate::interpreter::Interpreter;
+ use crate::primitives::PrimitiveFn;
+@@ -17,7 +17,7 @@ fn as_string(interpreter: &mut Interpreter, universe: &mut Universe) {
+         Value::Symbol(sym) => sym,
+     ]);
+ 
+-    interpreter.stack.push(Value::String(Rc::new(
++    interpreter.stack.push(Value::String(Gc::new(
+         universe.lookup_symbol(sym).to_string(),
+     )));
+ }
+diff --git a/som-interpreter-bc/src/primitives/system.rs b/som-interpreter-bc/src/primitives/system.rs
+index 6554327..d1ff714 100644
+--- a/som-interpreter-bc/src/primitives/system.rs
++++ b/som-interpreter-bc/src/primitives/system.rs
+@@ -1,6 +1,6 @@
+ use std::convert::TryFrom;
+ use std::fs;
+-use std::rc::Rc;
++use std::gc::Gc;
+ 
+ use crate::frame::FrameKind;
+ use crate::interpreter::Interpreter;
+@@ -42,7 +42,7 @@ fn load_file(interpreter: &mut Interpreter, universe: &mut Universe) {
+     };
+ 
+     let value = match fs::read_to_string(path) {
+-        Ok(value) => Value::String(Rc::new(value)),
++        Ok(value) => Value::String(Gc::new(value)),
+         Err(_) => Value::Nil,
+     };
+ 
+diff --git a/som-interpreter-bc/src/universe.rs b/som-interpreter-bc/src/universe.rs
+index af145cc..4fd1dee 100644
+--- a/som-interpreter-bc/src/universe.rs
++++ b/som-interpreter-bc/src/universe.rs
+@@ -1,9 +1,9 @@
+ use std::cell::RefCell;
+ use std::collections::HashMap;
+ use std::fs;
++use std::gc::Gc;
+ use std::io;
+ use std::path::{Path, PathBuf};
+-use std::rc::Rc;
+ 
+ use anyhow::{anyhow, Error};
+ 
+@@ -507,12 +507,12 @@ impl Universe {
+         &mut self,
+         interpreter: &mut Interpreter,
+         value: Value,
+-        block: Rc<Block>,
++        block: Gc<Block>,
+     ) -> Option<()> {
+         let method_name = self.intern_symbol("escapedBlock:");
+         let method = value.lookup_method(self, method_name)?;
+ 
+-        let holder = method.holder().upgrade().unwrap();
++        let holder = method.holder().unwrap();
+         let kind = FrameKind::Method {
+             method,
+             holder,
+@@ -537,7 +537,7 @@ impl Universe {
+         let method_name = self.intern_symbol("doesNotUnderstand:arguments:");
+         let method = value.lookup_method(self, method_name)?;
+ 
+-        let holder = method.holder().upgrade().unwrap();
++        let holder = method.holder().unwrap();
+         let kind = FrameKind::Method {
+             method,
+             holder,
+@@ -547,7 +547,7 @@ impl Universe {
+         let frame = interpreter.push_frame(kind);
+         frame.borrow_mut().args.push(value);
+         frame.borrow_mut().args.push(Value::Symbol(symbol));
+-        let args = Value::Array(Rc::new(RefCell::new(args)));
++        let args = Value::Array(Gc::new(RefCell::new(args)));
+         frame.borrow_mut().args.push(args);
+ 
+         Some(())
+@@ -563,7 +563,7 @@ impl Universe {
+         let method_name = self.intern_symbol("unknownGlobal:");
+         let method = value.lookup_method(self, method_name)?;
+ 
+-        let holder = method.holder().upgrade().unwrap();
++        let holder = method.holder().unwrap();
+         let kind = FrameKind::Method {
+             method,
+             holder,
+@@ -590,7 +590,7 @@ impl Universe {
+ 
+         let frame = interpreter.push_frame(kind);
+         frame.borrow_mut().args.push(Value::System);
+-        let args = Value::Array(Rc::new(RefCell::new(args)));
++        let args = Value::Array(Gc::new(RefCell::new(args)));
+         frame.borrow_mut().args.push(args);
+ 
+         Some(())
+diff --git a/som-interpreter-bc/src/value.rs b/som-interpreter-bc/src/value.rs
+index 364030d..3ab904b 100644
+--- a/som-interpreter-bc/src/value.rs
++++ b/som-interpreter-bc/src/value.rs
+@@ -1,5 +1,5 @@
+ use std::fmt;
+-use std::rc::Rc;
++use std::gc::Gc;
+ 
+ use num_bigint::BigInt;
+ 
+@@ -29,17 +29,17 @@ pub enum Value {
+     /// An interned symbol value.
+     Symbol(Interned),
+     /// A string value.
+-    String(Rc<String>),
++    String(Gc<String>),
+     /// An array of values.
+     Array(SOMRef<Vec<Self>>),
+     /// A block value, ready to be evaluated.
+-    Block(Rc<Block>),
++    Block(Gc<Block>),
+     /// A generic (non-primitive) class instance.
+     Instance(SOMRef<Instance>),
+     /// A bare class object.
+     Class(SOMRef<Class>),
+     /// A bare invokable.
+-    Invokable(Rc<Method>),
++    Invokable(Gc<Method>),
+ }
+ 
+ impl Value {
+@@ -64,7 +64,7 @@ impl Value {
+     }
+ 
+     /// Search for a given method for this value.
+-    pub fn lookup_method(&self, universe: &Universe, signature: Interned) -> Option<Rc<Method>> {
++    pub fn lookup_method(&self, universe: &Universe, signature: Interned) -> Option<Gc<Method>> {
+         self.class(universe).borrow().lookup_method(signature)
+     }
+ 
+@@ -121,7 +121,6 @@ impl Value {
+             Self::Class(class) => class.borrow().name().to_string(),
+             Self::Invokable(invokable) => invokable
+                 .holder()
+-                .upgrade()
+                 .map(|holder| format!("{}>>#{}", holder.borrow().name(), invokable.signature()))
+                 .unwrap_or_else(|| format!("??>>#{}", invokable.signature())),
+         }
+@@ -143,12 +142,12 @@ impl PartialEq for Value {
+                 a.eq(&BigInt::from(*b))
+             }
+             (Self::Symbol(a), Self::Symbol(b)) => a.eq(b),
+-            (Self::String(a), Self::String(b)) => Rc::ptr_eq(a, b),
+-            (Self::Array(a), Self::Array(b)) => Rc::ptr_eq(a, b),
+-            (Self::Instance(a), Self::Instance(b)) => Rc::ptr_eq(a, b),
+-            (Self::Class(a), Self::Class(b)) => Rc::ptr_eq(a, b),
+-            (Self::Block(a), Self::Block(b)) => Rc::ptr_eq(a, b),
+-            (Self::Invokable(a), Self::Invokable(b)) => Rc::ptr_eq(a, b),
++            (Self::String(a), Self::String(b)) => Gc::ptr_eq(a, b),
++            (Self::Array(a), Self::Array(b)) => Gc::ptr_eq(a, b),
++            (Self::Instance(a), Self::Instance(b)) => Gc::ptr_eq(a, b),
++            (Self::Class(a), Self::Class(b)) => Gc::ptr_eq(a, b),
++            (Self::Block(a), Self::Block(b)) => Gc::ptr_eq(a, b),
++            (Self::Invokable(a), Self::Invokable(b)) => Gc::ptr_eq(a, b),
+             _ => false,
+         }
+     }
+@@ -172,7 +171,6 @@ impl fmt::Debug for Value {
+             Self::Invokable(val) => {
+                 let signature = val
+                     .holder()
+-                    .upgrade()
+                     .map(|holder| format!("{}>>#{}", holder.borrow().name(), val.signature()))
+                     .unwrap_or_else(|| format!("??>>#{}", val.signature()));
+                 f.debug_tuple("Invokable").field(&signature).finish()
+
