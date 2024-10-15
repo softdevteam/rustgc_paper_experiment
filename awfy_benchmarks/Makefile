@@ -19,6 +19,7 @@ all: bench
 
 .PHONY: build bench
 .PHONY: clean clean-benchmarks clean-builds
+.PHONY: $(EXPERIMENTS)
 
 plot:
 	mkdir -p plots
@@ -31,7 +32,7 @@ clean-plots:
 	rm -rf plots
 	- rm summary.csv
 
-bench: build $(EXPERIMENTS)
+bench:  $(EXPERIMENTS)
 
 $(YKSOM_EXPS):
 	mkdir -p $@
@@ -142,18 +143,18 @@ som-rs-perf-rc:
 	ln -s $(PWD)/som-rs/perf_rc/release/som-interpreter-ast $(BIN)/som-rs/perf_rc/som-rs-ast
 	ln -s $(PWD)/som-rs/perf_rc/release/som-interpreter-bc $(BIN)/som-rs/perf_rc/som-rs-bc
 
-som-rs-perf-rc:
-	- rm -rf $(BIN)/som-rs/perf_rc
-	mkdir -p $(BIN)/som-rs/perf_rc
+som-rs-perf-gc:
+	- rm -rf $(BIN)/som-rs/perf_gc
+	mkdir -p $(BIN)/som-rs/perf_gc
 	cd som-rs && git reset --hard
 	cd som-rs && git apply $(PATCH_DIR)/som-rs/use_gc.patch
 	cd som-rs && git apply $(PATCH_DIR)/som-rs/dump_stats.patch
 	cd som-rs && \
 		RUSTC="../../bin/alloy/alloy/bin/rustc" \
-		cargo build --release --target-dir=perf_rc
-	ln -s $(PWD)/som-rs/core-lib $(BIN)/som-rs/perf_rc/core-lib
-	ln -s $(PWD)/som-rs/perf_rc/release/som-interpreter-ast $(BIN)/som-rs/perf_rc/som-rs-ast
-	ln -s $(PWD)/som-rs/perf_rc/release/som-interpreter-bc $(BIN)/som-rs/perf_rc/som-rs-bc
+		cargo build --release --target-dir=perf_gc
+	ln -s $(PWD)/som-rs/core-lib $(BIN)/som-rs/perf_gc/core-lib
+	ln -s $(PWD)/som-rs/perf_gc/release/som-interpreter-ast $(BIN)/som-rs/perf_gc/som-rs-ast
+	ln -s $(PWD)/som-rs/perf_gc/release/som-interpreter-bc $(BIN)/som-rs/perf_gc/som-rs-bc
 
 build-yksom-finalise-naive:
 	- rm -rf $(BIN)/yksom/finalise_naive
