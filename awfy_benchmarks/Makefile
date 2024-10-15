@@ -69,7 +69,8 @@ build: build-som-rs build-yksom
 
 build-som-rs: som-rs/Cargo.lock som-rs-finalise-naive som-rs-finalise-elide som-rs-barriers-naive som-rs-barriers-none som-rs-barriers-opt
 
-build-yksom: yksom/Cargo.toml build-yksom-finalise-naive build-yksom-finalise-elide
+build-yksom: yksom/Cargo.toml build-yksom-finalise-naive build-yksom-finalise-elide \
+	build-yksom-barriers-naive build-yksom-barriers-none build-yksom-barriers-opt
 
 som-rs-barriers-naive:
 	- rm -rf $(BIN)/som-rs/barriers_naive
@@ -155,6 +156,36 @@ build-yksom-finalise-elide:
 	      cargo build --release --target-dir=finalise_elide
 	ln -s $(PWD)/yksom/SOM $(BIN)/yksom/finalise_elide/SOM
 	ln -s $(PWD)/yksom/finalise_elide/release/yksom $(BIN)/yksom/finalise_elide/yksom
+
+build-yksom-barriers-naive:
+	- rm -rf $(BIN)/yksom/barriers_naive
+	mkdir -p $(BIN)/yksom/barriers_naive
+	cd yksom && git reset --hard
+	cd yksom && git apply $(PATCH_DIR)/yksom/dump_stats.patch
+	cd yksom && RUSTC="../../bin/alloy/barriers_naive/bin/rustc" \
+	      cargo build --release --target-dir=barriers_naive
+	ln -s $(PWD)/yksom/SOM $(BIN)/yksom/barriers_naive/SOM
+	ln -s $(PWD)/yksom/barriers_naive/release/yksom $(BIN)/yksom/barriers_naive/yksom
+
+build-yksom-barriers-opt:
+	- rm -rf $(BIN)/yksom/barriers_opt
+	mkdir -p $(BIN)/yksom/barriers_opt
+	cd yksom && git reset --hard
+	cd yksom && git apply $(PATCH_DIR)/yksom/dump_stats.patch
+	cd yksom && RUSTC="../../bin/alloy/barriers_opt/bin/rustc" \
+	      cargo build --release --target-dir=barriers_opt
+	ln -s $(PWD)/yksom/SOM $(BIN)/yksom/barriers_opt/SOM
+	ln -s $(PWD)/yksom/barriers_opt/release/yksom $(BIN)/yksom/barriers_opt/yksom
+
+build-yksom-barriers-none:
+	- rm -rf $(BIN)/yksom/barriers_none
+	mkdir -p $(BIN)/yksom/barriers_none
+	cd yksom && git reset --hard
+	cd yksom && git apply $(PATCH_DIR)/yksom/dump_stats.patch
+	cd yksom && RUSTC="../../bin/alloy/barriers_none/bin/rustc" \
+	      cargo build --release --target-dir=barriers_none
+	ln -s $(PWD)/yksom/SOM $(BIN)/yksom/barriers_none/SOM
+	ln -s $(PWD)/yksom/barriers_none/release/yksom $(BIN)/yksom/barriers_none/yksom
 
 clean-builds:
 	rm -rf som-rs
