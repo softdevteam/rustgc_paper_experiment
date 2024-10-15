@@ -107,6 +107,7 @@ $(ALLOY_SRC_DIR):
 	cd $(ALLOY_SRC_DIR) && git checkout $(ALLOY_VERSION)
 
 venv: $(VENV_DIR)/bin/activate
+	virtualenv venv
 
 $(VENV_DIR)/bin/activate: requirements.txt
 	$(PYTHON) -m venv $(VENV_DIR)
