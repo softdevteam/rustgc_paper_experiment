@@ -1,34 +1,77 @@
-diff --git a/library/std/src/gc.rs b/library/std/src/gc.rs
-index c4d505176ca..a12c9c35122 100644
---- a/library/std/src/gc.rs
-+++ b/library/std/src/gc.rs
-@@ -381,7 +381,7 @@ pub unsafe fn new_unsynchronised(value: T) -> Self {
-     #[cfg(not(no_global_oom_handling))]
-     unsafe fn new_internal(value: T) -> Self {
-         #[cfg(not(bootstrap))]
--        if !crate::mem::needs_finalizer::<T>() {
-+        if !crate::mem::needs_drop::<T>() {
-             return Self::from_inner(Box::leak(Box::new_in(GcBox { value }, GcAllocator)).into());
-         }
- 
 diff --git a/compiler/rustc_mir_transform/src/lib.rs b/compiler/rustc_mir_transform/src/lib.rs
-index e590a80b441..8e5cac3f51c 100644
+index e590a80b441..588af3ef4e5 100644
 --- a/compiler/rustc_mir_transform/src/lib.rs
 +++ b/compiler/rustc_mir_transform/src/lib.rs
-@@ -616,8 +616,6 @@ fn o1<T>(x: T) -> WithMinOptLevel<T> {
-             &multiple_return_terminators::MultipleReturnTerminators,
+@@ -95,7 +95,6 @@
+ mod prettify;
+ mod promote_consts;
+ mod ref_prop;
+-mod remove_gc_drops;
+ mod remove_noop_landing_pads;
+ mod remove_storage_markers;
+ mod remove_uninit_drops;
+@@ -617,7 +616,6 @@ fn o1<T>(x: T) -> WithMinOptLevel<T> {
              &deduplicate_blocks::DeduplicateBlocks,
              &large_enums::EnumSizeOpt { discrepancy: 128 },
--            // Must come before CriticalCallEdges to prevent LLVM basic block ordering errors.
+             // Must come before CriticalCallEdges to prevent LLVM basic block ordering errors.
 -            &remove_gc_drops::RemoveGcDrops,
              // Some cleanup necessary at least for LLVM and potentially other codegen backends.
              &add_call_guards::CriticalCallEdges,
              // Cleanup for human readability, off by default.
+diff --git a/compiler/rustc_mir_transform/src/remove_gc_drops.rs b/compiler/rustc_mir_transform/src/remove_gc_drops.rs
+deleted file mode 100644
+index 2dacc12137f..00000000000
+--- a/compiler/rustc_mir_transform/src/remove_gc_drops.rs
++++ /dev/null
+@@ -1,43 +0,0 @@
+-use rustc_middle::mir::*;
+-use rustc_middle::ty::{self, TyCtxt};
+-use rustc_span::sym;
+-
+-use super::simplify::simplify_cfg;
+-
+-pub struct RemoveGcDrops;
+-
+-impl<'tcx> MirPass<'tcx> for RemoveGcDrops {
+-    fn run_pass(&self, tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) {
+-        trace!("Running RemoveGcDrops on {:?}", body.source);
+-
+-        let is_gc_crate = tcx
+-            .get_diagnostic_item(sym::gc)
+-            .map_or(false, |gc| gc.krate == body.source.def_id().krate);
+-
+-        let did = body.source.def_id();
+-        let param_env = tcx.param_env_reveal_all_normalized(did);
+-        let mut should_simplify = false;
+-
+-        for block in body.basic_blocks.as_mut() {
+-            let terminator = block.terminator_mut();
+-            if let TerminatorKind::Drop { place, target, .. } = terminator.kind {
+-                let ty = place.ty(&body.local_decls, tcx).ty;
+-                if !ty.is_gc(tcx) {
+-                    continue;
+-                }
+-
+-                if let ty::Adt(_, substs) = ty.kind() {
+-                    if is_gc_crate || !substs.type_at(0).needs_finalizer(tcx, param_env) {
+-                        terminator.kind = TerminatorKind::Goto { target };
+-                        should_simplify = true;
+-                    }
+-                }
+-            }
+-        }
+-        // if we applied optimizations, we potentially have some cfg to cleanup to
+-        // make it easier for further passes
+-        if should_simplify {
+-            simplify_cfg(body);
+-        }
+-    }
+-}
 diff --git a/library/std/src/gc.rs b/library/std/src/gc.rs
-index c4d505176ca..398de01103a 100644
+index f11d75cb503..3a30bda6718 100644
 --- a/library/std/src/gc.rs
 +++ b/library/std/src/gc.rs
-@@ -213,32 +213,6 @@ impl<T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<Gc<U>> for Gc<T> {}
+@@ -245,32 +245,6 @@ impl<T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<Gc<U>> for Gc<T> {}
  #[unstable(feature = "gc", issue = "none")]
  impl<T: ?Sized + Unsize<U>, U: ?Sized> DispatchFromDyn<Gc<U>> for Gc<T> {}
  
@@ -61,3 +104,12 @@ index c4d505176ca..398de01103a 100644
  impl<T: ?Sized> Gc<T> {
      #[inline(always)]
      fn inner(&self) -> &GcBox<T> {
+@@ -413,7 +387,7 @@ pub unsafe fn new_unsynchronised(value: T) -> Self {
+     #[cfg(not(no_global_oom_handling))]
+     unsafe fn new_internal(value: T) -> Self {
+         #[cfg(not(bootstrap))]
+-        if !crate::mem::needs_finalizer::<T>() {
++        if !crate::mem::needs_drop::<T>() {
+             return Self::from_inner(Box::leak(Box::new_in(GcBox { value }, GcAllocator)).into());
+         }
+ 
