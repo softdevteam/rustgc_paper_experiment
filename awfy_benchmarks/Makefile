@@ -31,9 +31,9 @@ clean-plots:
 	rm -rf plots
 	- rm summary.csv
 
-bench: $(EXPERIMENTS)
+bench: build $(EXPERIMENTS)
 
-$(YKSOM_EXPS): build
+$(YKSOM_EXPS):
 	mkdir -p $@
 	- $(REBENCH_EXEC) -R -D \
 		--invocations ${PEXECS} \
@@ -41,7 +41,7 @@ $(YKSOM_EXPS): build
 		-df $@/$(REBENCH_DATA) \
 		yksom.conf $(notdir $@)
 
-$(SOMRSAST_EXPS): build
+$(SOMRSAST_EXPS):
 	mkdir -p $@
 	- $(REBENCH_EXEC) -R -D \
 		--invocations ${PEXECS} \
@@ -49,7 +49,7 @@ $(SOMRSAST_EXPS): build
 		-df $@/$(REBENCH_DATA) \
 		som-rs-ast.conf $(notdir $@)
 
-$(SOMRSBC_EXPS): build
+$(SOMRSBC_EXPS):
 	mkdir -p $@
 	- $(REBENCH_EXEC) -R -D \
 		--invocations ${PEXECS} \
