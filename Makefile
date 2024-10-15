@@ -48,25 +48,25 @@ plot:
 	# cat grmtools_benchmarks/summary.csv >> $(PWD)/summary.csv
 	# cat clbg_benchmarks/summary.csv >> $(PWD)/summary.csv
 	cd awfy_benchmarks && make plot
-	cat awfy_benchmarks/summary.csv >> $(PWD)/summary.csv
-	cd sws_benchmarks && make plot
-	cat sws_benchmarks/summary.csv >> $(PWD)/summary.csv
-	$(PYTHON_EXEC) process_overview.py
+	# cat awfy_benchmarks/summary.csv >> $(PWD)/summary.csv
+	# cd sws_benchmarks && make plot
+	# cat sws_benchmarks/summary.csv >> $(PWD)/summary.csv
+	# $(PYTHON_EXEC) process_overview.py
 
 bench:
-	cd grmtools_benchmarks && make bench
-	cd clbg_benchmarks && make bench
+	# cd grmtools_benchmarks && make bench
+	# cd clbg_benchmarks && make bench
 	cd awfy_benchmarks && make bench
-	cd sws_benchmarks && make bench
+	# cd sws_benchmarks && make bench
 
-build: $(ALLOY_CFGS_INSTALL_DIRS)
+build: build-alloy
 	cd awfy_benchmarks && make build
-	cd clbg_benchmarks && \
-		make build RUSTC="$(BIN)/alloy/$(ALLOY_DEFAULT_CFG)/bin/rustc"
-	cd sws_benchmarks && \
-		make build RUSTC="$(BIN)/alloy/$(ALLOY_DEFAULT_CFG)/bin/rustc"
-	cd grmtools_benchmarks && \
-		make build RUSTC="$(BIN)/alloy/$(ALLOY_DEFAULT_CFG)/bin/rustc"
+	# cd clbg_benchmarks && \
+	# 	make build RUSTC="$(BIN)/alloy/$(ALLOY_DEFAULT_CFG)/bin/rustc"
+	# cd sws_benchmarks && \
+	# 	make build RUSTC="$(BIN)/alloy/$(ALLOY_DEFAULT_CFG)/bin/rustc"
+	# cd grmtools_benchmarks && \
+	# 	make build RUSTC="$(BIN)/alloy/$(ALLOY_DEFAULT_CFG)/bin/rustc"
 
 clean-plots:
 	cd clbg_benchmarks && make clean-plots
@@ -85,6 +85,10 @@ clean-builds:
 	cd awfy_benchmarks && make clean-builds
 	cd sws_benchmarks && make clean-builds
 
+
+build-alloy: venv $(ALLOY_SRC_DIR) build-alloy-barriers-none \
+	build-alloy-barriers-naive build-alloy-barriers-opt \
+	build-alloy-finalise-elide build-alloy-finalise-naive
 
 build-alloy-barriers-naive:
 	cd $(ALLOY_SRC_DIR) && git reset --hard && ./x.py clean
@@ -134,26 +138,12 @@ build-alloy-finalise-naive:
 		--set install.prefix=${BIN}/alloy/finalise_naive \
 		--set install.sysconfdir=etc
 
-build-alloy: venv $(ALLOY_SRC_DIR) build-alloy-barriers-none \
-	build-alloy-barriers-naive build-alloy-barriers-opt \
-	build-alloy-finalise-elide build-alloy-finalise-naive
-
 clean: clean-confirm clean-plots clean-benchmarks clean-builds
 	rm -rf $(BIN)
 	@echo "Clean"
 
 clean-confirm:
 	@( read -p "Are you sure? [y/N]: " sure && case "$$sure" in [yY]) true;; *) false;; esac )
-
-$(ALLOY_CFGS_INSTALL_DIRS): $(ALLOY_SRC_DIR)
-	cd $(ALLOY_SRC_DIR) && git reset --hard && ./x.py clean
-	cd $(ALLOY_SRC_DIR) && git apply $(PATCH_DIR)/alloy/$(notdir $@).patch
-	$(PYTHON) $(ALLOY_SRC_DIR)/x.py install --config benchmark.config.toml \
-		--stage $(ALLOY_BOOTSTRAP_STAGE) \
-		--build-dir $(ALLOY_SRC_DIR)/build \
-		--set build.docs=false \
-		--set install.prefix=$@ \
-		--set install.sysconfdir=etc
 
 $(ALLOY_SRC_DIR):
 	git clone $(ALLOY_REPO) $(ALLOY_SRC_DIR)
