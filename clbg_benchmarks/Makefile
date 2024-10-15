@@ -12,13 +12,15 @@ REGEX_REPO = https://github.com/rust-lang/regex
 
 all: $(EXPERIMENTS)
 
-build: $(BIN)/regex_redux  $(BIN)/binary_trees
+build: $(BIN)/regex_redux $(BIN)/binary_trees
 
 plot:
 	$(PYTHON_EXEC) $(REBENCH_PROCESSOR) summary binary_trees regex_redux
 
 clean-plots:
 	- rm summary.csv
+
+bench: $(EXPERIMENTS)
 
 $(EXPERIMENTS): build
 	mkdir -p $(PWD)/results/$@
@@ -28,16 +30,14 @@ $(EXPERIMENTS): build
 		-df results/$(REBENCH_DATA) \
 		clbg.conf $@
 
-$(BIN)/regex_redux: regex-rc regex-gc
+$(BIN)/regex_redux: regex
 	mkdir -p $@
-	cd $(PWD)/regex_redux && ln -s Cargo.toml.gc Cargo.toml
+	cd $(PWD)/regex && git apply $(PWD)/regex_gc.patch
 	cd $(PWD)/regex_redux && cargo build --release --bin alloy
-	cd $(PWD)/regex_redux && rm Cargo.toml && ln -s Cargo.toml.rc Cargo.toml
+	cd $(PWD)/regex && git reset --hard
 	cd $(PWD)/regex_redux && cargo build --release --bin rc
 	cd $(PWD)/regex_redux && cargo build --release --bin fasta
 	$(PWD)/regex_redux/target/release/fasta 2500000 > redux_input.txt
-	cd $(PWD)/regex_redux && rm Cargo.toml
-	@echo "Built with RUSTC=$$RUSTC"
 	ln -s $(PWD)/$(notdir $@)/target/release/* $@/
 
 $(BIN)/binary_trees:
@@ -46,20 +46,9 @@ $(BIN)/binary_trees:
 	@echo "Built with RUSTC=$$RUSTC"
 	ln -s $(PWD)/$(notdir $@)/target/release/* $@/
 
-regex/alloy: regex
-	cd regex && git diff-index --quiet HEAD --
-	cd regex && git apply $(PWD)/regex_gc.patch
-	cd regex && cargo build --release --target-dir=alloy
-	cd regex && git reset --hard
-
-
-regex-gc: regex-rc
-	cp -r regex-rc regex-gc
-	cd regex-gc && git apply $(PWD)/regex-gc.patch
-
-regex-rc:
-	git clone $(REGEX_REPO) regex-rc
-	cd regex-rc && git checkout $(REGEX_VERSION)
+regex:
+	git clone $(REGEX_REPO) regex
+	cd regex && git checkout $(REGEX_VERSION)
 
 clean-benchmarks:
 	rm -rf results
@@ -67,8 +56,8 @@ clean-benchmarks:
 clean-builds:
 	rm -rf $(PWD)/binary_trees/target
 	rm -rf $(PWD)/regex_redux/target
-	rm -rf $(PWD)/regex-rc
-	rm -rf $(PWD)/regex-gc
+	rm -rf $(PWD)/regex
+	rm -rf $(PWD)/regex
 	rm -rf $(PWD)/bin
 	rm -rf redux_input.txt
 
