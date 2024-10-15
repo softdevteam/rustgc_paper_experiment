@@ -94,7 +94,10 @@ clean-confirm:
 
 $(ALLOY_CFGS_INSTALL_DIRS): $(ALLOY_SRC_DIR)
 	cd $(ALLOY_SRC_DIR) && git reset --hard && ./x.py clean
-	cd $(ALLOY_SRC_DIR) && git apply $(PATCH_DIR)/alloy/$(notdir $@).patch
+	if [ -f "$(PATCH_DIR)/alloy/$(notdir $@).patch" ]; then \
+		echo "git apply $(PATCH_DIR)/alloy/$(notdir $@).patch"; \
+		cd $(ALLOY_SRC_DIR) && git apply $(PATCH_DIR)/alloy/$(notdir $@).patch; \
+	fi
 	$(PYTHON) $(ALLOY_SRC_DIR)/x.py install --config benchmark.config.toml \
 		--stage $(ALLOY_BOOTSTRAP_STAGE) \
 		--build-dir $(ALLOY_SRC_DIR)/build \
