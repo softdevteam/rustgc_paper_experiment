@@ -92,11 +92,9 @@ clean: clean-confirm clean-plots clean-benchmarks clean-builds
 clean-confirm:
 	@( read -p "Are you sure? [y/N]: " sure && case "$$sure" in [yY]) true;; *) false;; esac )
 
-$(ALLOY_CFGS_INSTALL_DIRS):
+$(ALLOY_CFGS_INSTALL_DIRS): $(ALLOY_SRC_DIR)
 	cd $(ALLOY_SRC_DIR) && git diff-index --quiet HEAD --
-	@if [ -f "$(PATCH_DIR)/alloy/$(notdir $@).patch" ]; then \
-		cd $(ALLOY_SRC_DIR) && git apply $(PATCH_DIR)/alloy/$(notdir $@).patch; \
-	fi
+	cd $(ALLOY_SRC_DIR) && git apply $(PATCH_DIR)/alloy/$(notdir $@).patch; \
 	$(PYTHON) $(ALLOY_SRC_DIR)/x.py install --config benchmark.config.toml \
 		--stage $(ALLOY_BOOTSTRAP_STAGE) \
 		--build-dir $(ALLOY_SRC_DIR)/build \
