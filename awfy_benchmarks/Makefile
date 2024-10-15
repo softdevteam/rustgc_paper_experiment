@@ -79,33 +79,77 @@ $(YKSOM_CFGS): yksom/Cargo.toml
 	ln -s $@/release/yksom $@/yksom
 	cd yksom && git reset --hard
 
-$(SOMRS_CFGS): som-rs/Cargo.lock
-	cd som-rs && git diff-index --quiet HEAD --
-	@if [  "$(notdir $@))" = "perf_rc" ]; then \
-		cd som-rs && git apply $(PATCH_DIR)/som-rs/bdwgc_allocator.patch; \
-	else \
-		cd som-rs; \
-		git apply $(PATCH_DIR)/som-rs/use_gc.patch; \
-		echo "Applying dump stats";\
-		git apply $(PATCH_DIR)/som-rs/dump_stats.patch; \
-	fi
-	@if [ -n "$(filter $(ALLOY_CFGS), $(notdir $@))" ]; then \
-		cd som-rs && \
-		RUSTC="../../bin/alloy/$(notdir $@)/bin/rustc" \
-			cargo build \
-				--release \
-			      	--target-dir=$@; \
-	else \
-		cd som-rs && \
-		RUSTC="../../bin/alloy/$(ALLOY_DEFAULT_CFG)/bin/rustc" \
-			cargo build \
-				--release \
-			      	--target-dir=$@; \
-	fi
-	ln -s $(PWD)/som-rs/core-lib $@/core-lib
-	ln -s $@/release/som-interpreter-bc $@/som-rs-bc
-	ln -s $@/release/som-interpreter-ast $@/som-rs-ast
+som-rs-barriers-naive:
+	- rm -rf $(BIN)/som-rs/barriers_naive
+	mkdir -p $(BIN)/som-rs/barriers_naive
 	cd som-rs && git reset --hard
+	cd som-rs && git apply $(PATCH_DIR)/som-rs/use_gc.patch
+	cd som-rs && git apply $(PATCH_DIR)/som-rs/dump_stats.patch
+	cd som-rs && \
+		RUSTC="../../bin/alloy/barriers_naive/bin/rustc" \
+		cargo build --release --target-dir=barriers_naive
+	ln -s $(PWD)/som-rs/core-lib $(BIN)/som-rs/barriers_naive/core-lib
+	ln -s $(PWD)/som-rs/barriers_naive/release/som-interpreter-ast $(BIN)/som-rs/barriers_naive/som-rs-ast
+	ln -s $(PWD)/som-rs/barriers_naive/release/som-interpreter-bc $(BIN)/som-rs/barriers_naive/som-rs-bc
+
+som-rs-barriers-opt:
+	- rm -rf $(BIN)/som-rs/barriers_opt
+	mkdir -p $(BIN)/som-rs/barriers_opt
+	cd som-rs && git reset --hard
+	cd som-rs && git apply $(PATCH_DIR)/som-rs/use_gc.patch
+	cd som-rs && git apply $(PATCH_DIR)/som-rs/dump_stats.patch
+	cd som-rs && \
+		RUSTC="../../bin/alloy/barriers_opt/bin/rustc" \
+		cargo build --release --target-dir=barriers_opt
+	ln -s $(PWD)/som-rs/core-lib $(BIN)/som-rs/barriers_opt/core-lib
+	ln -s $(PWD)/som-rs/barriers_opt/release/som-interpreter-ast $(BIN)/som-rs/barriers_opt/som-rs-ast
+	ln -s $(PWD)/som-rs/barriers_opt/release/som-interpreter-bc $(BIN)/som-rs/barriers_opt/som-rs-bc
+
+som-rs-barriers-none:
+	- rm -rf $(BIN)/som-rs/barriers_none
+	mkdir -p $(BIN)/som-rs/barriers_none
+	cd som-rs && git reset --hard
+	cd som-rs && git apply $(PATCH_DIR)/som-rs/use_gc.patch
+	cd som-rs && git apply $(PATCH_DIR)/som-rs/dump_stats.patch
+	cd som-rs && \
+		RUSTC="../../bin/alloy/barriers_none/bin/rustc" \
+		cargo build --release --target-dir=barriers_none
+	ln -s $(PWD)/som-rs/core-lib $(BIN)/som-rs/barriers_none/core-lib
+	ln -s $(PWD)/som-rs/barriers_none/release/som-interpreter-ast $(BIN)/som-rs/barriers_none/som-rs-ast
+	ln -s $(PWD)/som-rs/barriers_none/release/som-interpreter-bc $(BIN)/som-rs/barriers_none/som-rs-bc
+
+som-rs-finalise-elide:
+	- rm -rf $(BIN)/som-rs/finalise_elide
+	mkdir -p $(BIN)/som-rs/finalise_elide
+	cd som-rs && git reset --hard
+	cd som-rs && git apply $(PATCH_DIR)/som-rs/use_gc.patch
+	cd som-rs && git apply $(PATCH_DIR)/som-rs/dump_stats.patch
+	cd som-rs && \
+		RUSTC="../../bin/alloy/finalise_elide/bin/rustc" \
+		cargo build --release --target-dir=finalise_elide
+	ln -s $(PWD)/som-rs/core-lib $(BIN)/som-rs/finalise_elide/core-lib
+	ln -s $(PWD)/som-rs/finalise_elide/release/som-interpreter-ast $(BIN)/som-rs/finalise_elide/som-rs-ast
+	ln -s $(PWD)/som-rs/finalise_elide/release/som-interpreter-bc $(BIN)/som-rs/finalise_elide/som-rs-bc
+
+som-rs-finalise-naive:
+	- rm -rf $(BIN)/som-rs/finalise_naive
+	mkdir -p $(BIN)/som-rs/finalise_naive
+	cd som-rs && git reset --hard
+	cd som-rs && git apply $(PATCH_DIR)/som-rs/use_gc.patch
+	cd som-rs && git apply $(PATCH_DIR)/som-rs/dump_stats.patch
+	cd som-rs && \
+		RUSTC="../../bin/alloy/finalise_naive/bin/rustc" \
+		cargo build --release --target-dir=finalise_naive
+	ln -s $(PWD)/som-rs/core-lib $(BIN)/som-rs/finalise_naive/core-lib
+	ln -s $(PWD)/som-rs/finalise_naive/release/som-interpreter-ast $(BIN)/som-rs/finalise_naive/som-rs-ast
+	ln -s $(PWD)/som-rs/finalise_naive/release/som-interpreter-bc $(BIN)/som-rs/finalise_naive/som-rs-bc
+
+build-som-rs: som-rs/Cargo.lock som-rs-finalise-naive som-rs-finalise-elide som-rs-barriers-naive som-rs-barriers-none som-rs-barriers-opt
+
+clean-builds:
+	rm -rf som-rs
+	rm -rf yksom
+	rm -rf bin
 
 som-rs/Cargo.lock:
 	git clone --recursive $(SOMRS_REPO) som-rs
