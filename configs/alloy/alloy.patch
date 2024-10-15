@@ -1,16 +1,22 @@
-diff --git a/compiler/rustc_mir_transform/src/lib.rs b/compiler/rustc_mir_transform/src/lib.rs
-index e590a80b441..1409fc16ce1 100644
---- a/compiler/rustc_mir_transform/src/lib.rs
-+++ b/compiler/rustc_mir_transform/src/lib.rs
-@@ -351,7 +351,7 @@ fn mir_promoted(
-             &promote_pass,
-             &simplify::SimplifyCfg::PromoteConsts,
-             &coverage::InstrumentCoverage,
--            &check_finalizers::CheckFinalizers,
-+            // &check_finalizers::CheckFinalizers,
-         ],
-         Some(MirPhase::Analysis(AnalysisPhase::Initial)),
-     );
+diff --git a/compiler/rustc_mir_transform/src/check_finalizers.rs b/compiler/rustc_mir_transform/src/check_finalizers.rs
+index 2be27efcfab..c6a91288d7a 100644
+--- a/compiler/rustc_mir_transform/src/check_finalizers.rs
++++ b/compiler/rustc_mir_transform/src/check_finalizers.rs
+@@ -21,6 +21,14 @@ fn run_pass(&self, tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) {
+             return;
+         }
+ 
++        let is_gc_crate = tcx
++            .get_diagnostic_item(sym::gc)
++            .map_or(false, |gc| gc.krate == body.source.def_id().krate);
++
++        if is_gc_crate {
++            return;
++        }
++
+         let ctor_did = ctor.unwrap();
+         let param_env = tcx.param_env(body.source.def_id());
+ 
 diff --git a/library/std/src/gc.rs b/library/std/src/gc.rs
 index f11d75cb503..35006553f60 100644
 --- a/library/std/src/gc.rs
