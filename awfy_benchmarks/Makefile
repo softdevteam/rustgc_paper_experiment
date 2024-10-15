@@ -13,7 +13,7 @@ YKSOM_EXPS = $(addprefix results/, yksom_elision, yksom_barriers)
 SOMRSBC_EXPS = $(addprefix results/, som_rs_bc_elision, som_rs_bc_barriers)
 SOMRSAST_EXPS = $(addprefix results/, som_rs_ast_elision, som_rs_ast_barriers)
 
-EXPERIMENTS = $(SOMRSAST_EXPS) $(YKSOM_EXPS)
+EXPERIMENTS = $(SOMRSAST_EXPS) $(SOMRSBC_EXPS) $(YKSOM_EXPS)
 
 all: bench
 
@@ -128,6 +128,32 @@ som-rs-finalise-naive:
 	ln -s $(PWD)/som-rs/core-lib $(BIN)/som-rs/finalise_naive/core-lib
 	ln -s $(PWD)/som-rs/finalise_naive/release/som-interpreter-ast $(BIN)/som-rs/finalise_naive/som-rs-ast
 	ln -s $(PWD)/som-rs/finalise_naive/release/som-interpreter-bc $(BIN)/som-rs/finalise_naive/som-rs-bc
+
+som-rs-perf-rc:
+	- rm -rf $(BIN)/som-rs/perf_rc
+	mkdir -p $(BIN)/som-rs/perf_rc
+	cd som-rs && git reset --hard
+	cd som-rs && git apply $(PATCH_DIR)/som-rs/bdwgc_allocator.patch
+	cd som-rs && git apply $(PATCH_DIR)/som-rs/dump_stats.patch
+	cd som-rs && \
+		RUSTC="../../bin/alloy/alloy/bin/rustc" \
+		cargo build --release --target-dir=perf_rc
+	ln -s $(PWD)/som-rs/core-lib $(BIN)/som-rs/perf_rc/core-lib
+	ln -s $(PWD)/som-rs/perf_rc/release/som-interpreter-ast $(BIN)/som-rs/perf_rc/som-rs-ast
+	ln -s $(PWD)/som-rs/perf_rc/release/som-interpreter-bc $(BIN)/som-rs/perf_rc/som-rs-bc
+
+som-rs-perf-rc:
+	- rm -rf $(BIN)/som-rs/perf_rc
+	mkdir -p $(BIN)/som-rs/perf_rc
+	cd som-rs && git reset --hard
+	cd som-rs && git apply $(PATCH_DIR)/som-rs/use_gc.patch
+	cd som-rs && git apply $(PATCH_DIR)/som-rs/dump_stats.patch
+	cd som-rs && \
+		RUSTC="../../bin/alloy/alloy/bin/rustc" \
+		cargo build --release --target-dir=perf_rc
+	ln -s $(PWD)/som-rs/core-lib $(BIN)/som-rs/perf_rc/core-lib
+	ln -s $(PWD)/som-rs/perf_rc/release/som-interpreter-ast $(BIN)/som-rs/perf_rc/som-rs-ast
+	ln -s $(PWD)/som-rs/perf_rc/release/som-interpreter-bc $(BIN)/som-rs/perf_rc/som-rs-bc
 
 build-yksom-finalise-naive:
 	- rm -rf $(BIN)/yksom/finalise_naive
