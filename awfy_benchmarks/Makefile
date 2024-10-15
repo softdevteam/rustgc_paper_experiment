@@ -8,18 +8,10 @@ YKSOM_REPO = https://github.com/softdevteam/yksom
 SOMRS_VERSION = 35b780cbee765cca24201fe063d3f1055ec7f608
 YKSOM_VERSION=fc7c7c131ba93b7e3c85a172fbcc245f29c324d6
 
-SOMRS_CFGS = $(addprefix $(BIN)/som-rs/, finalise_elide finalise_naive \
-	     barriers_naive barriers_opt barriers_none \
-	     perf_rc perf_gc)
-YKSOM_CFGS = $(addprefix $(BIN)/yksom/, finalise_elide finalise_naive barriers_naive \
-	     barriers_opt barriers_none)
+YKSOM_EXPS = $(addprefix results/, yksom_elision, yksom_barriers)
 
-# SOMRSBC_EXPS = $(addprefix results/, som_rs_bc_elision som_rs_bc_perf som_rs_bc_barriers)
-# SOMRSAST_EXPS = $(addprefix results/, som_rs_ast_elision som_rs_ast_perf som_rs_ast_barriers)
-YKSOM_EXPS = $(addprefix results/, yksom_elision)
-
-SOMRSBC_EXPS = $(addprefix results/, som_rs_bc_elision)
-SOMRSAST_EXPS = $(addprefix results/, som_rs_ast_elision)
+SOMRSBC_EXPS = $(addprefix results/, som_rs_bc_elision, som_rs_bc_barriers)
+SOMRSAST_EXPS = $(addprefix results/, som_rs_ast_elision, som_rs_ast_barriers)
 
 EXPERIMENTS = $(SOMRSAST_EXPS) $(YKSOM_EXPS)
 
