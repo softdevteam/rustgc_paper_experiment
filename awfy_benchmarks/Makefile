@@ -14,10 +14,14 @@ SOMRS_CFGS = $(addprefix $(BIN)/som-rs/, finalise_elide finalise_naive \
 YKSOM_CFGS = $(addprefix $(BIN)/yksom/, finalise_elide finalise_naive barriers_naive \
 	     barriers_opt barriers_none)
 
-SOMRSBC_EXPS = $(addprefix results/, som_rs_bc_elision som_rs_bc_perf som_rs_bc_barriers)
-SOMRSAST_EXPS = $(addprefix results/, som_rs_ast_elision som_rs_ast_perf som_rs_ast_barriers)
-YKSOM_EXPS = $(addprefix results/, yksom_elision yksom_barriers)
-EXPERIMENTS = $(SOMRSBC_EXPS) $(SOMRSAST_EXPS) $(YKSOM_EXPS)
+# SOMRSBC_EXPS = $(addprefix results/, som_rs_bc_elision som_rs_bc_perf som_rs_bc_barriers)
+# SOMRSAST_EXPS = $(addprefix results/, som_rs_ast_elision som_rs_ast_perf som_rs_ast_barriers)
+YKSOM_EXPS = $(addprefix results/, yksom_elision)
+
+SOMRSBC_EXPS = $(addprefix results/, som_rs_bc_elision)
+SOMRSAST_EXPS = $(addprefix results/, som_rs_ast_elision)
+
+EXPERIMENTS = $(SOMRSAST_EXPS) $(YKSOM_EXPS)
 
 all: bench
 
@@ -61,23 +65,11 @@ $(SOMRSBC_EXPS): build
 		-df $@/$(REBENCH_DATA) \
 		som-rs-bc.conf $(notdir $@)
 
-build: $(YKSOM_CFGS) $(SOMRS_CFGS)
+build: build-som-rs build-yksom
 
-$(YKSOM_CFGS): yksom/Cargo.toml
-	cd yksom && git diff-index --quiet HEAD --
-	cd yksom && git apply $(PATCH_DIR)/yksom/dump_stats.patch
-	@if [ -n "$(filter $(ALLOY_CFGS), $(notdir $@))" ]; then \
-		cd yksom && \
-		RUSTC="../../bin/alloy/$(notdir $@)/bin/rustc" \
-			cargo build --release --target-dir=$@; \
-	else \
-		cd yksom && \
-		RUSTC="../../bin/alloy/$(ALLOY_DEFAULT_CFG)/bin/rustc" \
-			cargo build --release --target-dir=$@; \
-	fi
-	ln -s $(PWD)/yksom/SOM $@/SOM
-	ln -s $@/release/yksom $@/yksom
-	cd yksom && git reset --hard
+build-som-rs: som-rs/Cargo.lock som-rs-finalise-naive som-rs-finalise-elide som-rs-barriers-naive som-rs-barriers-none som-rs-barriers-opt
+
+build-yksom: yksom/Cargo.toml build-yksom-finalise-naive build-yksom-finalise-elide
 
 som-rs-barriers-naive:
 	- rm -rf $(BIN)/som-rs/barriers_naive
@@ -144,7 +136,25 @@ som-rs-finalise-naive:
 	ln -s $(PWD)/som-rs/finalise_naive/release/som-interpreter-ast $(BIN)/som-rs/finalise_naive/som-rs-ast
 	ln -s $(PWD)/som-rs/finalise_naive/release/som-interpreter-bc $(BIN)/som-rs/finalise_naive/som-rs-bc
 
-build-som-rs: som-rs/Cargo.lock som-rs-finalise-naive som-rs-finalise-elide som-rs-barriers-naive som-rs-barriers-none som-rs-barriers-opt
+build-yksom-finalise-naive:
+	- rm -rf $(BIN)/yksom/finalise_naive
+	mkdir -p $(BIN)/yksom/finalise_naive
+	cd yksom && git reset --hard
+	cd yksom && git apply $(PATCH_DIR)/yksom/dump_stats.patch
+	cd yksom && RUSTC="../../bin/alloy/finalise_naive/bin/rustc" \
+	      cargo build --release --target-dir=finalise_naive
+	ln -s $(PWD)/yksom/SOM $(BIN)/yksom/finalise_naive/SOM
+	ln -s $(PWD)/yksom/finalise_naive/release/yksom $(BIN)/yksom/finalise_naive/yksom
+
+build-yksom-finalise-elide:
+	- rm -rf $(BIN)/yksom/finalise_elide
+	mkdir -p $(BIN)/yksom/finalise_elide
+	cd yksom && git reset --hard
+	cd yksom && git apply $(PATCH_DIR)/yksom/dump_stats.patch
+	cd yksom && RUSTC="../../bin/alloy/finalise_elide/bin/rustc" \
+	      cargo build --release --target-dir=finalise_elide
+	ln -s $(PWD)/yksom/SOM $(BIN)/yksom/finalise_elide/SOM
+	ln -s $(PWD)/yksom/finalise_elide/release/yksom $(BIN)/yksom/finalise_elide/yksom
 
 clean-builds:
 	rm -rf som-rs
@@ -161,10 +171,5 @@ yksom/Cargo.toml:
 
 clean-benchmarks:
 	rm -rf results
-
-clean-builds:
-	rm -rf yksom
-	rm -rf som-rs
-	rm -rf $(BIN)
 
 clean: clean-benchmarks clean-builds
