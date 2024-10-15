@@ -2,6 +2,8 @@ PWD != pwd
 BIN = $(PWD)/bin
 PATCH_DIR  = $(PWD)/configs
 
+PYTHON = python3
+
 export RESULTS_DIR = results
 export REBENCH_DATA = results.data
 export PEXECS ?= 30
