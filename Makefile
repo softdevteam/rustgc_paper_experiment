@@ -17,7 +17,7 @@ export ALLOY_DEFAULT_CFG = alloy
 
 export REBENCH_PROCESSOR = $(PWD)/process_graph.py
 
-ALLOY_REPO = https://github.com/jacob-hughes/alloy
+ALLOY_REPO = https://github.com/softdevteam/alloy
 ALLOY_SRC_DIR = $(PWD)/alloy
 ALLOY_VERSION = master
 ALLOY_CFGS_INSTALL_DIRS= $(addprefix $(BIN)/alloy/, $(ALLOY_CFGS))
@@ -83,7 +83,58 @@ clean-builds:
 	cd awfy_benchmarks && make clean-builds
 	cd sws_benchmarks && make clean-builds
 
-build-alloy: venv $(ALLOY_SRC_DIR) $(ALLOY_CFGS_INSTALL_DIRS)
+
+build-alloy-barriers-naive:
+	cd $(ALLOY_SRC_DIR) && git reset --hard && ./x.py clean
+	cd $(ALLOY_SRC_DIR) && git apply $(PATCH_DIR)/alloy/barriers_naive.patch
+	$(PYTHON) $(ALLOY_SRC_DIR)/x.py install --config benchmark.config.toml \
+		--stage $(ALLOY_BOOTSTRAP_STAGE) \
+		--build-dir $(ALLOY_SRC_DIR)/build \
+		--set build.docs=false \
+		--set install.prefix=${BIN}/alloy/barriers_naive \
+		--set install.sysconfdir=etc
+
+build-alloy-barriers-opt:
+	cd $(ALLOY_SRC_DIR) && git reset --hard && ./x.py clean
+	$(PYTHON) $(ALLOY_SRC_DIR)/x.py install --config benchmark.config.toml \
+		--stage $(ALLOY_BOOTSTRAP_STAGE) \
+		--build-dir $(ALLOY_SRC_DIR)/build \
+		--set build.docs=false \
+		--set install.prefix=${BIN}/alloy/barriers_opt \
+		--set install.sysconfdir=etc
+
+build-alloy-barriers-none:
+	cd $(ALLOY_SRC_DIR) && git reset --hard && ./x.py clean
+	cd $(ALLOY_SRC_DIR) && git apply $(PATCH_DIR)/alloy/barriers_none.patch
+	$(PYTHON) $(ALLOY_SRC_DIR)/x.py install --config benchmark.config.toml \
+		--stage $(ALLOY_BOOTSTRAP_STAGE) \
+		--build-dir $(ALLOY_SRC_DIR)/build \
+		--set build.docs=false \
+		--set install.prefix=${BIN}/alloy/barriers_none \
+		--set install.sysconfdir=etc
+
+build-alloy-finalise-elide:
+	cd $(ALLOY_SRC_DIR) && git reset --hard && ./x.py clean
+	$(PYTHON) $(ALLOY_SRC_DIR)/x.py install --config benchmark.config.toml \
+		--stage $(ALLOY_BOOTSTRAP_STAGE) \
+		--build-dir $(ALLOY_SRC_DIR)/build \
+		--set build.docs=false \
+		--set install.prefix=${BIN}/alloy/finalise_elide \
+		--set install.sysconfdir=etc
+
+build-alloy-finalise-naive:
+	cd $(ALLOY_SRC_DIR) && git reset --hard && ./x.py clean
+	cd $(ALLOY_SRC_DIR) && git apply $(PATCH_DIR)/alloy/finalise_naive.patch
+	$(PYTHON) $(ALLOY_SRC_DIR)/x.py install --config benchmark.config.toml \
+		--stage $(ALLOY_BOOTSTRAP_STAGE) \
+		--build-dir $(ALLOY_SRC_DIR)/build \
+		--set build.docs=false \
+		--set install.prefix=${BIN}/alloy/finalise_naive \
+		--set install.sysconfdir=etc
+
+build-alloy: venv $(ALLOY_SRC_DIR) build-alloy-barriers-none \
+	build-alloy-barriers-naive build-alloy-barriers-opt \
+	build-alloy-finalise-elide build-alloy-finalise-naive
 
 clean: clean-confirm clean-plots clean-benchmarks clean-builds
 	rm -rf $(BIN)
