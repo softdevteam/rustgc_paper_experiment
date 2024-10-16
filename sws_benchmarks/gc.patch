@@ -49,7 +49,7 @@ index e82c71c..7f1dd9e 100644
   "windows-sys 0.52.0",
  ]
 diff --git a/Cargo.toml b/Cargo.toml
-index c4fe691..08a5843 100644
+index c4fe691..15cc86e 100644
 --- a/Cargo.toml
 +++ b/Cargo.toml
 @@ -38,7 +38,7 @@ doc = false
@@ -71,7 +71,7 @@ index c4fe691..08a5843 100644
  listenfd = "1.0"
  maud = { version = "0.26", optional = true }
 diff --git a/src/handler.rs b/src/handler.rs
-index b3f19aa..3d8329b 100644
+index b3f19aa..fedcf67 100644
 --- a/src/handler.rs
 +++ b/src/handler.rs
 @@ -7,7 +7,8 @@
@@ -84,7 +84,17 @@ index b3f19aa..3d8329b 100644
  
  #[cfg(any(
      feature = "compression",
-@@ -169,7 +170,7 @@ impl Default for RequestHandlerOpts {
+@@ -119,6 +120,9 @@ pub struct RequestHandlerOpts {
+     pub advanced_opts: Option<Advanced>,
+ }
+ 
++unsafe impl FinalizerSafe for RequestHandlerOpts {}
++impl std::gc::ReferenceFree for RequestHandlerOpts {}
++
+ impl Default for RequestHandlerOpts {
+     fn default() -> Self {
+         Self {
+@@ -169,7 +173,7 @@ impl Default for RequestHandlerOpts {
  /// It defines the main request handler used by the Hyper service request.
  pub struct RequestHandler {
      /// Request handler options.
@@ -107,10 +117,16 @@ index 9431877..e072c50 100644
  use crate::Result;
  
 diff --git a/src/lib.rs b/src/lib.rs
-index 85874f8..e6d447e 100644
+index 85874f8..53e2f52 100644
 --- a/src/lib.rs
 +++ b/src/lib.rs
-@@ -101,6 +101,12 @@
+@@ -95,12 +95,17 @@
+ //!
+ 
+ #![deny(missing_docs)]
+-#![forbid(unsafe_code)]
+ #![deny(warnings)]
+ #![deny(rust_2018_idioms)]
  #![deny(dead_code)]
  #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
  
@@ -137,7 +153,7 @@ index e7b426e..ffc8313 100644
  
  use crate::mem_cache::cache::{MemFile, MemFileTempOpts, CACHE_STORE};
 diff --git a/src/server.rs b/src/server.rs
-index 8df52d3..b4893b7 100644
+index 8df52d3..01ba72f 100644
 --- a/src/server.rs
 +++ b/src/server.rs
 @@ -9,7 +9,8 @@
@@ -159,6 +175,15 @@ index 8df52d3..b4893b7 100644
          });
  
          #[cfg(windows)]
+@@ -598,7 +599,7 @@ impl Server {
+             .serve(router_service);
+ 
+         #[cfg(unix)]
+-        let http1_cancel_recv = Arc::new(Mutex::new(_cancel_recv));
++        let http1_cancel_recv = unsafe { Arc::from_raw(&**Arc::new(std::gc::FinalizeUnchecked::new(Mutex::new(_cancel_recv)))) };
+ 
+         #[cfg(unix)]
+         let http1_server = http1_server.with_graceful_shutdown(signals::wait_for_signals(
 diff --git a/src/service.rs b/src/service.rs
 index f8aeb05..5b1b7d1 100644
 --- a/src/service.rs

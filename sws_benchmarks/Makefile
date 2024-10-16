@@ -30,23 +30,28 @@ plot:
 clean-plots:
 	- rm summary.csv
 
-$(SERVERS): $(SERVER_BUILDS)
+$(SERVERS):
 	@if [ -f "data/benchmark_$@.csv" ]; then \
 		rm -f "data/benchmark_$@.csv"; \
 	fi
 	mkdir -p $@/www
 	SERVER=$@ ./run.sh $(PWD)/$@ $(WRK) $(CONNECTIONS) $(THREADS) $(DURATION) $(URL)
 
-build: $(SERVER_BUILDS)
+build: build-gc build-arc
 
-$(SERVER_BUILDS): sws hyper wrk
-	cd sws && git diff-index --quiet HEAD --
-	cd sws && git apply $(PWD)/$(notdir $@).patch
-	cd sws && cargo build --release --target-dir=$@
+build-gc: sws hyper wrk
 	cd sws && git reset --hard
+	cd sws && git apply $(PWD)/gc.patch
+	cd sws && cargo build --release --target-dir=gc
+
+build-arc: sws hyper wrk
+	cd sws && git reset --hard
+	cd sws && git apply $(PWD)/arc.patch
+	cd sws && cargo build --release --target-dir=arc
 
 sws:
 	git clone $(SWS_REPO) sws
+	cd sws && git apply $(PWD)/$(notdir $@).patch
 	cd sws && git checkout $(SWS_VERSION)
 
 hyper:
