@@ -31,11 +31,13 @@ clean-plots:
 	- rm summary.csv
 
 $(SERVERS):
+	- rm -rf www/
+	mkdir -p www/
 	@if [ -f "data/benchmark_$@.csv" ]; then \
 		rm -f "data/benchmark_$@.csv"; \
 	fi
 	mkdir -p $@/www
-	SERVER=$@ ./run.sh $(PWD)/$@ $(WRK) $(CONNECTIONS) $(THREADS) $(DURATION) $(URL)
+	SERVER=$@ ./run.sh $(WRK) $(CONNECTIONS) $(THREADS) $(DURATION) $(URL)
 
 build: build-gc build-arc
 
@@ -51,7 +53,6 @@ build-arc: sws hyper wrk
 
 sws:
 	git clone $(SWS_REPO) sws
-	cd sws && git apply $(PWD)/$(notdir $@).patch
 	cd sws && git checkout $(SWS_VERSION)
 
 hyper:
