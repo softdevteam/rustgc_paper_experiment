@@ -60,7 +60,7 @@ wrk:
 	cd wrk && make -j$(nprocs)
 
 clean-builds:
-	rm -rf rc
+	rm -rf arc
 	rm -rf gc
 
 clean-src:

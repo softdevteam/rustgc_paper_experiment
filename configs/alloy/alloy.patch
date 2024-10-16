@@ -17,6 +17,19 @@ index 2be27efcfab..c6a91288d7a 100644
          let ctor_did = ctor.unwrap();
          let param_env = tcx.param_env(body.source.def_id());
  
+diff --git a/library/core/src/gc.rs b/library/core/src/gc.rs
+index 384245317c5..e4c09ff1aff 100644
+--- a/library/core/src/gc.rs
++++ b/library/core/src/gc.rs
+@@ -94,5 +94,8 @@ unsafe impl<T> FinalizerSafe for FinalizeUnchecked<T> {}
+ #[cfg_attr(not(test), rustc_diagnostic_item = "ReferenceFree")]
+ pub auto trait ReferenceFree {}
+ 
++#[cfg(not(bootstrap))]
++impl<T> ReferenceFree for FinalizeUnchecked<T> {}
++
+ impl<T> !ReferenceFree for &T {}
+ impl<T> !ReferenceFree for &mut T {}
 diff --git a/library/std/src/gc.rs b/library/std/src/gc.rs
 index f11d75cb503..35006553f60 100644
 --- a/library/std/src/gc.rs
