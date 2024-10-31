@@ -10,3 +10,4 @@ bin/
 target/
 rc/
 gc/
+results/
