@@ -6,9 +6,6 @@ index c44aafc..a2b785b 100644
      pub full_stopped: bool,
  }
  
-+unsafe impl std::gc::FinalizerOptional for Body {}
-+unsafe impl std::gc::FinalizerOptional for Expression {}
-+
  /// Represents an expression.
  ///
  /// Exemple:
@@ -309,9 +306,6 @@ index d154418..b1868af 100644
      pub bindings: HashMap<String, Value>,
  }
  
-+unsafe impl std::gc::FinalizerOptional for Frame {}
-+unsafe impl core::marker::FinalizerSafe for Frame {}
-+
  impl Frame {
      /// Construct a new empty frame from its kind.
      pub fn from_kind(kind: FrameKind) -> Self {
@@ -1206,9 +1200,6 @@ index a8f61ee..e73656d 100644
      pub locals: Vec<Value>,
  }
  
-+unsafe impl std::gc::FinalizerOptional for Instance {}
-+unsafe impl core::marker::FinalizerSafe for Instance {}
-+
  impl Instance {
      /// Construct an instance for a given class.
      pub fn from_class(class: SOMRef<Class>) -> Self {
