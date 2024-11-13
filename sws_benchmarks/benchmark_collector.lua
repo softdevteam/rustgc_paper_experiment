@@ -4,10 +4,10 @@
 local server_name = os.getenv("SERVER")
 
 done = function(summary, latency, requests)
-    os.execute("mkdir -p data/")
+    os.execute("mkdir -p results/")
 
-    local filename = "benchmark_" .. server_name
-    local file_path = "data/" .. "/" .. filename
+    local filename = "raw_" .. server_name
+    local file_path = "results/" .. "/" .. filename
 
     local csv = ''
     -- csv = csv .. string.format('requests,')

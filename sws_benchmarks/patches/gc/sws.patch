@@ -49,7 +49,7 @@ index e82c71c..7f1dd9e 100644
   "windows-sys 0.52.0",
  ]
 diff --git a/Cargo.toml b/Cargo.toml
-index c4fe691..08a5843 100644
+index c4fe691..15cc86e 100644
 --- a/Cargo.toml
 +++ b/Cargo.toml
 @@ -38,7 +38,7 @@ doc = false
@@ -107,10 +107,16 @@ index 9431877..e072c50 100644
  use crate::Result;
  
 diff --git a/src/lib.rs b/src/lib.rs
-index 85874f8..e6d447e 100644
+index 85874f8..53e2f52 100644
 --- a/src/lib.rs
 +++ b/src/lib.rs
-@@ -101,6 +101,12 @@
+@@ -95,12 +95,17 @@
+ //!
+ 
+ #![deny(missing_docs)]
+-#![forbid(unsafe_code)]
+ #![deny(warnings)]
+ #![deny(rust_2018_idioms)]
  #![deny(dead_code)]
  #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
  
@@ -137,7 +143,7 @@ index e7b426e..ffc8313 100644
  
  use crate::mem_cache::cache::{MemFile, MemFileTempOpts, CACHE_STORE};
 diff --git a/src/server.rs b/src/server.rs
-index 8df52d3..b4893b7 100644
+index 8df52d3..067bdd2 100644
 --- a/src/server.rs
 +++ b/src/server.rs
 @@ -9,7 +9,8 @@
@@ -155,10 +161,19 @@ index 8df52d3..b4893b7 100644
          // Create a service router for Hyper
          let router_service = RouterService::new(RequestHandler {
 -            opts: Arc::from(handler_opts),
-+            opts: Arc::new(handler_opts),
++            opts: Arc::from_raw(unsafe{ &**Arc::new(std::gc::FinalizeUnchecked::new(handler_opts))})
          });
  
          #[cfg(windows)]
+@@ -598,7 +599,7 @@ impl Server {
+             .serve(router_service);
+ 
+         #[cfg(unix)]
+-        let http1_cancel_recv = Arc::new(Mutex::new(_cancel_recv));
++        let http1_cancel_recv = unsafe { Arc::from_raw(&**Arc::new(std::gc::FinalizeUnchecked::new(Mutex::new(_cancel_recv)))) };
+ 
+         #[cfg(unix)]
+         let http1_server = http1_server.with_graceful_shutdown(signals::wait_for_signals(
 diff --git a/src/service.rs b/src/service.rs
 index f8aeb05..5b1b7d1 100644
 --- a/src/service.rs
@@ -186,7 +201,7 @@ index bcae1bd..e4cff36 100644
  use tokio::time::{sleep, Duration};
  
 diff --git a/src/testing.rs b/src/testing.rs
-index bac712a..4c0b243 100644
+index bac712a..632a73d 100644
 --- a/src/testing.rs
 +++ b/src/testing.rs
 @@ -9,7 +9,7 @@
@@ -203,7 +218,7 @@ index bac712a..4c0b243 100644
  
          RequestHandler {
 -            opts: Arc::from(req_handler_opts),
-+            opts: Arc::new(req_handler_opts),
++            opts: Arc::from_raw(unsafe{ &**Arc::new(std::gc::FinalizeUnchecked::new(req_handler_opts))})
          }
      }
  }

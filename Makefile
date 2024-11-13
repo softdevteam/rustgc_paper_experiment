@@ -32,6 +32,8 @@ all: build bench plot
 .PHONY: plot plot-perf plot-barriers plot-elision
 .PHONY: clean clean-builds clean-plots clean-benchmarks check-clean
 
+plot: plot-perf plot-barriers plot-elision
+
 plot-perf:
 	cd sws_benchmarks && make plot-perf
 
@@ -43,12 +45,21 @@ plot-elision:
 
 bench: bench-perf bench-barriers bench-elision
 
+bench-perf:
+	cd sws_benchmarks && make bench-perf
+
+bench-barriers:
+	cd sws_benchmarks && make bench-barriers
+
+bench-elision:
+	cd sws_benchmarks && make bench-elision
+
 build: build-alloy build-benchmarks
 
 build-benchmarks: build-perf build-barriers build-elision
 
 build-perf:
-	cd sws_benchmarks && make build-elision
+	cd sws_benchmarks && make build-perf
 
 build-barriers:
 	cd sws_benchmarks && make build-barriers
