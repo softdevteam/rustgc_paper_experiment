@@ -31,7 +31,7 @@ pp = pprint.PrettyPrinter(indent=4)
 PEXECS = int(os.environ['PEXECS'])
 ITERS = int(os.environ['ITERS'])
 
-CFG_LATEX_MAP = {
+UNIT_LATEX_MAP = {
     "perf_gc": r"\ourgc",
     "bt_alloy": r"\ourgc",
     "rr_alloy": r"\ourgc",
@@ -732,22 +732,59 @@ def load_data(f):
     if "sws_benchmarks" in f:
         return load_sws_results(f)
 
+def exp_name(f):
+    if "barriers" in f:
+        exp = "barriers"
+    elif "finalise" in f:
+        exp = "elision"
+    else:
+        exp = "perf"
+    if "sws_benchmarks" in f:
+        return f'sws_{exp}'
+
+EXP_MAP = {
+    "sws_benchmarks": r"sws",
+    "barriers": r"barriere",
+}
+
+CFG_LATEX_MAP = {
+    "raw_gc": r"\ourgc",
+    "raw_arc": r"\rc",
+    "finalise_naive": r"\fnaive",
+    "finalise_elide": r"\felide",
+    "barriers_none": r"\bnone",
+    "barriers_naive": r"\bnaive",
+    "barriers_opt": r"\bopt",
+}
 print(f"==> processing results for {sys.argv[1:]}")
 
 def add_suffixes_to_columns(df, suffix):
     df.columns = [f'{col}_{suffix}' for col in df.columns]
     return df
 
-def prettify_ci(ci):
-    return r'\footnotesize{$\pm$' + f'{ci:.3f}' + r'}'
 
-def prettify_mean(ci):
-    return r'\footnotesize{$\pm$' + f'{ci:.3f}' + r'}'
+def plot_table(name, exp):
+    def merge_mean_and_ci(row, mean, ci):
+        ci = r'\footnotesize{$\pm$' + f'{row[ci]:.3f}' + r'}'
+        return  f'{row[mean]:.2f} ' + ci
 
-df = [load_data(arg) for arg in sys.argv[1:]]
-df = pd.concat([add_suffixes_to_columns(d, s) for d, s in df], axis=1)
+    ltx_df = pd.DataFrame()
+    cols = exp.columns
+    means = cols[::2]
+    cis = cols[1::2]
+    for m, ci in zip(means, cis):
+        cfg = [k for k in CFG_LATEX_MAP.keys() if k in m]
+        assert len(cfg) == 1
+        cfg = cfg[0]
+        ltx_df[CFG_LATEX_MAP[cfg]] = exp.apply(merge_mean_and_ci, mean=m, ci=ci, axis = 1)
 
-with open('table.tex', 'w') as f:
-    ltx_df = df.rename(index=lambda x: f"{CFG_LATEX_MAP[x]}")
-    print(ltx_df)
-    f.write(ltx_df.to_latex())
+    ltx_df.rename(index=lambda x: f"{UNIT_LATEX_MAP[x]}", inplace=True)
+
+    with open(f'plots/{name}_table.tex', 'w') as f:
+        f.write(ltx_df.sort_index().to_latex())
+
+args = sys.argv[1:]
+raw_data = [load_data(arg) for arg in sys.argv[1:]]
+combined_data = pd.concat([add_suffixes_to_columns(d, s) for d, s in raw_data], axis=1)
+
+plot_table(exp_name(args[1]), combined_data)

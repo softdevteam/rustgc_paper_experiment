@@ -55,10 +55,15 @@ plot-perf: plot-setup
 		$(RESULTS)/raw_arc.csv
 
 plot-barriers: plot-setup
-	@echo "TODO: plot-barriers"
+	$(PYTHON_EXEC) $(RESULTS_PROCESSOR) \
+		$(RESULTS)/raw_barriers_naive.csv \
+		$(RESULTS)/raw_barriers_opt.csv \
+		$(RESULTS)/raw_barriers_none.csv \
 
 plot-elision: plot-setup
-	@echo "TODO: plot-elision"
+	$(PYTHON_EXEC) $(RESULTS_PROCESSOR) \
+		$(RESULTS)/raw_finalise_naive.csv \
+		$(RESULTS)/raw_finalise_elide.csv
 
 plot-setup: venv
 	mkdir -p plots
