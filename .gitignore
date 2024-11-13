@@ -1,8 +1,5 @@
-/som-rs/
-yksom/
 venv/
-bdwgc/
-/bin/
-summary.csv
 plots/
+bin/
+/bdwgc/
 /alloy/
