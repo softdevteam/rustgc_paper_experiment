@@ -26,6 +26,8 @@ THREADS ?= 4
 CONNECTIONS ?= 100
 DURATION ?= 3s
 WRK = $(PWD)/wrk/wrk
+RESULTS = $(PWD)/results
+RESULTS_PROCESSOR = ../process.py
 
 make all: venv build bench plot
 
@@ -48,7 +50,9 @@ build: build-perf build-barriers build-elision
 plot: plot-perf plot-barriers plot-elision
 
 plot-perf: plot-setup
-	@echo "TODO: plot-perf"
+	$(PYTHON_EXEC) $(RESULTS_PROCESSOR) \
+		$(RESULTS)/raw_gc.csv \
+		$(RESULTS)/raw_arc.csv
 
 plot-barriers: plot-setup
 	@echo "TODO: plot-barriers"
