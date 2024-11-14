@@ -11,12 +11,12 @@ from scipy.stats import t
 
 import matplotlib
 matplotlib.use('Agg')
-matplotlib.rcParams['text.usetex'] = True
+matplotlib.rcParams['text.usetex'] = False
 matplotlib.rcParams['font.family'] = 'sans-serif'
 matplotlib.rcParams['font.sans-serif'] = 'cm'
-matplotlib.rcParams.update({
-    "pgf.texsystem": "pdflatex",
-})
+# matplotlib.rcParams.update({
+#     "pgf.texsystem": "pdflatex",
+# })
 
 matplotlib.rcParams.update({'errorbar.capsize': 2})
 from matplotlib.ticker import ScalarFormatter, FuncFormatter
@@ -101,13 +101,6 @@ mapper = {
 
 def mean(l):
     return math.fsum(l) / float(len(l))
-
-def confidence_interval(l):
-    Z = 2.576  # 99% interval
-    return Z * (stdev(l) / math.sqrt(len(l)))
-
-def confidence_interval_inner(std_dev, pexecs):
-    margin_of_error = t.ppf(0.995, pexecs - 1) * (std_dev / math.sqrt(pexecs))
 
 def pdiff(bl, cmp):
         return abs(((cmp - bl) / abs(bl)) * 100)
@@ -392,121 +385,117 @@ def load_exp(exp_name):
     experiment.gc_stats = stats
     return experiment
 
-def plot_overview_mem(name, exps, variant = 'Mem'):
-    legend ={
-        'barriers' : [name_map[cfg] for cfg in sorted(exps[0].cfgs())],
-        'elision' : [name_map[cfg] for cfg in sorted(exps[0].cfgs())],
-        'barriers_mem' : [name_map[cfg] for cfg in sorted(exps[0].cfgs())],
-        'elision_mem' : [name_map[cfg] for cfg in sorted(exps[0].cfgs())],
-        'perf_mem' : [name_map[cfg] for cfg in sorted(exps[0].cfgs())],
-    }
-    exps = sorted(exps, key = lambda e: e.name)
-    index = [vm_mapper[e.name] for e in exps]
-    if variant == 'Mem':
-        geomeans = [[e.geomean_mem(cfg) for cfg in sorted(e.cfgs())] for e in exps]
-        cis = [[e.ci_mean_mem(cfg) for cfg in sorted(e.cfgs())] for e in exps]
-        name += '_mem'
-    else:
-        geomeans = [[e.geomean(cfg) for cfg in sorted(e.cfgs())] for e in exps]
-        cis = [[e.ci_mean(cfg) for cfg in sorted(e.cfgs())] for e in exps]
+# def plot_overview_mem(name, exps, variant = 'Mem'):
+#     legend ={
+#         'barriers' : [name_map[cfg] for cfg in sorted(exps[0].cfgs())],
+#         'elision' : [name_map[cfg] for cfg in sorted(exps[0].cfgs())],
+#         'barriers_mem' : [name_map[cfg] for cfg in sorted(exps[0].cfgs())],
+#         'elision_mem' : [name_map[cfg] for cfg in sorted(exps[0].cfgs())],
+#         'perf_mem' : [name_map[cfg] for cfg in sorted(exps[0].cfgs())],
+#     }
+#     exps = sorted(exps, key = lambda e: e.name)
+#     index = [vm_mapper[e.name] for e in exps]
+#     if variant == 'Mem':
+#         geomeans = [[e.geomean_mem(cfg) for cfg in sorted(e.cfgs())] for e in exps]
+#         cis = [[e.ci_mean_mem(cfg) for cfg in sorted(e.cfgs())] for e in exps]
+#         name += '_mem'
+#     else:
+#         geomeans = [[e.geomean(cfg) for cfg in sorted(e.cfgs())] for e in exps]
+#         cis = [[e.ci_mean(cfg) for cfg in sorted(e.cfgs())] for e in exps]
+#
+#     sns.set(style="whitegrid")
+#     # plt.rc('text', usetex=True)
+#     # plt.rc('font', family='serif')
+#     fig, ax = plt.subplots(figsize=(5, 3))
+#
+#     df = pd.DataFrame(geomeans, index=index)
+#     errs = pd.DataFrame(cis, index=index)
+#
+#
+#     plot = df.plot(kind='barh', width=0.8, ax=ax)
+#     plot.margins(x=0.01)
+#
+#     leg = ax.legend(legend[name])
+#     # if variant == 'Mem':
+#     #     leg.remove()
+#
+#     ax.spines['right'].set_visible(False)
+#     ax.spines['top'].set_visible(False)
+#     ax.grid(linewidth=0.25)
+#     ax.spines['right'].set_visible(False)
+#     ax.spines['top'].set_visible(False)
+#     ax.xaxis.set_ticks_position('bottom')
+#     ax.yaxis.set_ticks_position('left')
+#     ax.xaxis.set_tick_params(which='minor', size=0)
+#     ax.yaxis.set_tick_params(which='minor', width=0)
+#     plt.yticks(range(0, len(index)), index, ha="right")
+#     if variant == 'Mem':
+#         ax.set_xlabel('Max RSS (MiB) (lower is better)', labelpad=20)
+#     else:
+#         ax.set_xlabel('Wall-clock time (ms) (lower is better)', labelpad=20)
+#     # ax.set_yticks(range, len(exp.benchmarks()))
+#     # ax.set_ytickslabels(exp.benchmarks())
+#     formatter = ScalarFormatter()
+#     formatter.set_scientific(False)
+#     ax.xaxis.set_major_formatter(formatter)
+#     plt.tight_layout()
+#     plt.savefig(f"plots/{name}.svg", format="svg", bbox_inches="tight")
+#     print("Graph saved to '%s'" % f"plots/{name}.svg")
+#
+# def plot_overview_bar(name, exps):
+#     legend ={
+#         'barriers' : [name_map[cfg] for cfg in sorted(exps[0].cfgs())],
+#         'elision' : [name_map[cfg] for cfg in sorted(exps[0].cfgs())],
+#         'perf' : [name_map[cfg] for cfg in sorted(exps[0].cfgs())],
+#     }
+#     exps = sorted(exps, key = lambda e: e.name)
+#     index = [vm_mapper[e.name] for e in exps]
+#     geomeans = [[e.geomean(cfg) for cfg in sorted(e.cfgs())] for e in exps]
+#     cis = [[e.ci_mean(cfg) for cfg in sorted(e.cfgs())] for e in exps]
+#
+#     sns.set(style="whitegrid")
+#     # plt.rc('text', usetex=True)
+#     # plt.rc('font', family='serif')
+#     fig, ax = plt.subplots(figsize=(5, 3))
+#
+#     df = pd.DataFrame(geomeans, index=index)
+#     errs = pd.DataFrame(cis, index=index)
+#
+#
+#     plot = df.plot(kind='barh', width=0.8, ax=ax, xerr=errs)
+#     plot.margins(x=0.01)
+#
+#     ax.legend(legend[name])
+#
+#     ax.spines['right'].set_visible(False)
+#     ax.spines['top'].set_visible(False)
+#     ax.grid(linewidth=0.25)
+#     ax.spines['right'].set_visible(False)
+#     ax.spines['top'].set_visible(False)
+#     ax.xaxis.set_ticks_position('bottom')
+#     ax.yaxis.set_ticks_position('left')
+#     ax.xaxis.set_tick_params(which='minor', size=0)
+#     ax.yaxis.set_tick_params(which='minor', width=0)
+#     plt.yticks(range(0, len(index)), index, ha="right")
+#     ax.set_xlabel('Wall-clock time (ms) (lower is better)', labelpad=20)
+#     # ax.set_yticks(range, len(exp.benchmarks()))
+#     # ax.set_ytickslabels(exp.benchmarks())
+#     formatter = ScalarFormatter()
+#     formatter.set_scientific(False)
+#     ax.xaxis.set_major_formatter(formatter)
+#     plt.tight_layout()
+#     plt.savefig(f"plots/{name}.svg", format="svg", bbox_inches="tight")
+#     print("Graph saved to '%s'" % f"plots/{name}.svg")
 
+def plot_perf(filename, means, errs):
     sns.set(style="whitegrid")
-    # plt.rc('text', usetex=True)
-    # plt.rc('font', family='serif')
-    fig, ax = plt.subplots(figsize=(5, 3))
+    plt.rc('text', usetex=False)
+    plt.rc('font', family='serif')
+    fig, ax = plt.subplots(figsize=(8, 4))
 
-    df = pd.DataFrame(geomeans, index=index)
-    errs = pd.DataFrame(cis, index=index)
+    means.plot(kind='bar', ax=ax, width=0.8, yerr=errs)
 
-
-    plot = df.plot(kind='barh', width=0.8, ax=ax)
-    plot.margins(x=0.01)
-
-    leg = ax.legend(legend[name])
-    # if variant == 'Mem':
-    #     leg.remove()
-
-    ax.spines['right'].set_visible(False)
-    ax.spines['top'].set_visible(False)
-    ax.grid(linewidth=0.25)
-    ax.spines['right'].set_visible(False)
-    ax.spines['top'].set_visible(False)
-    ax.xaxis.set_ticks_position('bottom')
-    ax.yaxis.set_ticks_position('left')
-    ax.xaxis.set_tick_params(which='minor', size=0)
-    ax.yaxis.set_tick_params(which='minor', width=0)
-    plt.yticks(range(0, len(index)), index, ha="right")
-    if variant == 'Mem':
-        ax.set_xlabel('Max RSS (MiB) (lower is better)', labelpad=20)
-    else:
-        ax.set_xlabel('Wall-clock time (ms) (lower is better)', labelpad=20)
-    # ax.set_yticks(range, len(exp.benchmarks()))
-    # ax.set_ytickslabels(exp.benchmarks())
-    formatter = ScalarFormatter()
-    formatter.set_scientific(False)
-    ax.xaxis.set_major_formatter(formatter)
-    plt.tight_layout()
-    plt.savefig(f"plots/{name}.svg", format="svg", bbox_inches="tight")
-    print("Graph saved to '%s'" % f"plots/{name}.svg")
-
-def plot_overview_bar(name, exps):
-    legend ={
-        'barriers' : [name_map[cfg] for cfg in sorted(exps[0].cfgs())],
-        'elision' : [name_map[cfg] for cfg in sorted(exps[0].cfgs())],
-        'perf' : [name_map[cfg] for cfg in sorted(exps[0].cfgs())],
-    }
-    exps = sorted(exps, key = lambda e: e.name)
-    index = [vm_mapper[e.name] for e in exps]
-    geomeans = [[e.geomean(cfg) for cfg in sorted(e.cfgs())] for e in exps]
-    cis = [[e.ci_mean(cfg) for cfg in sorted(e.cfgs())] for e in exps]
-
-    sns.set(style="whitegrid")
-    # plt.rc('text', usetex=True)
-    # plt.rc('font', family='serif')
-    fig, ax = plt.subplots(figsize=(5, 3))
-
-    df = pd.DataFrame(geomeans, index=index)
-    errs = pd.DataFrame(cis, index=index)
-
-
-    plot = df.plot(kind='barh', width=0.8, ax=ax, xerr=errs)
-    plot.margins(x=0.01)
-
-    ax.legend(legend[name])
-
-    ax.spines['right'].set_visible(False)
-    ax.spines['top'].set_visible(False)
-    ax.grid(linewidth=0.25)
-    ax.spines['right'].set_visible(False)
-    ax.spines['top'].set_visible(False)
-    ax.xaxis.set_ticks_position('bottom')
-    ax.yaxis.set_ticks_position('left')
-    ax.xaxis.set_tick_params(which='minor', size=0)
-    ax.yaxis.set_tick_params(which='minor', width=0)
-    plt.yticks(range(0, len(index)), index, ha="right")
-    ax.set_xlabel('Wall-clock time (ms) (lower is better)', labelpad=20)
-    # ax.set_yticks(range, len(exp.benchmarks()))
-    # ax.set_ytickslabels(exp.benchmarks())
-    formatter = ScalarFormatter()
-    formatter.set_scientific(False)
-    ax.xaxis.set_major_formatter(formatter)
-    plt.tight_layout()
-    plt.savefig(f"plots/{name}.svg", format="svg", bbox_inches="tight")
-    print("Graph saved to '%s'" % f"plots/{name}.svg")
-
-def plot_perf(exp):
-    means = [[mean(exp.iters(cfg, benchmark)) for benchmark in exp.benchmarks()] for cfg in exp.cfgs()]
-    cis = [[confidence_interval(exp.iters(cfg, benchmark)) for benchmark in exp.benchmarks()] for cfg in exp.cfgs()]
-
-    sns.set(style="whitegrid")
-    plt.rc('text', usetex=True)
-    plt.rc('font', family='sans-serif')
-    fig, ax = plt.subplots(figsize=(8, 3))
-    df = pd.DataFrame(zip(*means), index=exp.benchmarks())
-    errs = pd.DataFrame(zip(*cis), index=exp.benchmarks())
-    plot = df.plot(kind='bar', width=0.8, ax=ax, yerr=errs)
-    plot.margins(x=0.01)
-    ax.legend([name_map[c] for c in exp.cfgs()])
+    ax.set_xticklabels(means.index, rotation=45, ha='right')
 
     ax.spines['right'].set_visible(False)
     ax.spines['top'].set_visible(False)
@@ -518,121 +507,79 @@ def plot_perf(exp):
     ax.yaxis.set_ticks_position('left')
     ax.xaxis.set_tick_params(which='minor', size=0)
     ax.yaxis.set_tick_params(which='minor', width=0)
-    plt.xticks(range(0, len(exp.benchmarks())), exp.benchmarks(), rotation = 45, ha="right")
-    # ax.set_yticks(range, len(exp.benchmarks()))
-    # ax.set_ytickslabels(exp.benchmarks())
     formatter = ScalarFormatter()
     formatter.set_scientific(False)
     ax.yaxis.set_major_formatter(formatter)
     plt.tight_layout()
-    plt.savefig(f"plots/{exp.name}.svg", format="svg", bbox_inches="tight")
-    print("Graph saved to '%s'" % f"{exp.name}.svg")
+    plt.savefig(filename, format="svg", bbox_inches="tight")
 
-def plot_memh(exp):
-    means = [[mean(exp.peaks(cfg, benchmark)) for benchmark in exp.benchmarks()] for cfg in exp.cfgs()]
-    cis = [[confidence_interval(exp.peaks(cfg, benchmark)) for benchmark in exp.benchmarks()] for cfg in exp.cfgs()]
-
-    sns.set(style="whitegrid")
-    plt.rc('text', usetex=True)
-    plt.rc('font', family='sans-serif')
-    fig, ax = plt.subplots(figsize=(5, 3))
-    df = pd.DataFrame(zip(*means), index=exp.benchmarks())
-    errs = pd.DataFrame(zip(*cis), index=exp.benchmarks())
-    plot = df.plot(kind='barh', width=0.8, ax=ax, xerr=errs)
-    plot.margins(x=0.01)
-    ax.legend([name_map[c] for c in exp.cfgs()]).remove()
-
-    ax.spines['right'].set_visible(False)
-    ax.spines['top'].set_visible(False)
-    ax.set_xlabel(f'Max RSS ({unit_mapper[exp.name]}) (lower is better)', labelpad=20)
-    ax.grid(linewidth=0.25)
-    ax.spines['right'].set_visible(False)
-    ax.spines['top'].set_visible(False)
-    ax.xaxis.set_ticks_position('bottom')
-    ax.yaxis.set_ticks_position('left')
-    ax.xaxis.set_tick_params(which='minor', size=0)
-    ax.yaxis.set_tick_params(which='minor', width=0)
-    plt.yticks(range(0, len(exp.benchmarks())), exp.benchmarks(), ha="right")
-    # ax.set_yticks(range, len(exp.benchmarks()))
-    # ax.set_ytickslabels(exp.benchmarks())
-    formatter = ScalarFormatter()
-    formatter.set_scientific(False)
-    ax.xaxis.set_major_formatter(formatter)
-    plt.tight_layout()
-    plt.savefig(f"plots/{exp.name}_mem.svg", format="svg", bbox_inches="tight")
-    print("Graph saved to '%s'" % f"{exp.name}_mem.svg")
-
-def ploth(exp):
-    means = [[mean(exp.iters(cfg, benchmark)) for benchmark in exp.benchmarks()] for cfg in exp.cfgs()]
-    cis = [[confidence_interval(exp.iters(cfg, benchmark)) for benchmark in exp.benchmarks()] for cfg in exp.cfgs()]
-
-    sns.set(style="whitegrid")
-    plt.rc('text', usetex=True)
-    plt.rc('font', family='sans-serif')
-    fig, ax = plt.subplots(figsize=(5, 3))
-    df = pd.DataFrame(zip(*means), index=exp.benchmarks())
-    errs = pd.DataFrame(zip(*cis), index=exp.benchmarks())
-    plot = df.plot(kind='barh', width=0.8, ax=ax, xerr=errs)
-    plot.margins(x=0.01)
-    ax.legend([name_map[c] for c in exp.cfgs()])
-
-    ax.spines['right'].set_visible(False)
-    ax.spines['top'].set_visible(False)
-    ax.set_xlabel(f'Wall-clock time (ms) (lower is better)', labelpad=20)
-    ax.grid(linewidth=0.25)
-    ax.spines['right'].set_visible(False)
-    ax.spines['top'].set_visible(False)
-    ax.xaxis.set_ticks_position('bottom')
-    ax.yaxis.set_ticks_position('left')
-    ax.xaxis.set_tick_params(which='minor', size=0)
-    ax.yaxis.set_tick_params(which='minor', width=0)
-    plt.yticks(range(0, len(exp.benchmarks())), exp.benchmarks(), ha="right")
-    # ax.set_yticks(range, len(exp.benchmarks()))
-    # ax.set_ytickslabels(exp.benchmarks())
-    formatter = ScalarFormatter()
-    formatter.set_scientific(False)
-    ax.xaxis.set_major_formatter(formatter)
-    plt.tight_layout()
-    plt.savefig(f"plots/{exp.name}.svg", format="svg", bbox_inches="tight")
-    print("Graph saved to '%s'" % f"{exp.name}_mem.svg")
-
-def plot_mem(exp):
-    if 'yksom' in exp.name:
-        return
-    means = [[mean(exp.peaks(cfg, benchmark)) for benchmark in exp.benchmarks()] for cfg in exp.cfgs()]
-    cis = [[confidence_interval(exp.peaks(cfg, benchmark)) for benchmark in exp.benchmarks()] for cfg in exp.cfgs()]
-
-
-    sns.set(style="whitegrid")
-    plt.rc('text', usetex=True)
-    plt.rc('font', family='sans-serif')
-    fig, ax = plt.subplots(figsize=(8, 3))
-    df = pd.DataFrame(zip(*means), index=exp.benchmarks())
-    errs = pd.DataFrame(zip(*cis), index=exp.benchmarks())
-    plot = df.plot(kind='bar', width=0.8, ax=ax, yerr=errs)
-    plot.margins(x=0.01)
-    ax.legend([name_map[c] for c in exp.cfgs()])
-
-    ax.spines['right'].set_visible(False)
-    ax.spines['top'].set_visible(False)
-    ax.set_ylabel(f'Peak Memory ({unit_mapper[exp.name]})\n(lower is better)')
-    ax.grid(linewidth=0.25)
-    ax.spines['right'].set_visible(False)
-    ax.spines['top'].set_visible(False)
-    ax.xaxis.set_ticks_position('bottom')
-    ax.yaxis.set_ticks_position('left')
-    ax.xaxis.set_tick_params(which='minor', size=0)
-    ax.yaxis.set_tick_params(which='minor', width=0)
-    plt.xticks(range(0, len(exp.benchmarks())), exp.benchmarks(), rotation = 45, ha="right")
-    # ax.set_yticks(range, len(exp.benchmarks()))
-    # ax.set_ytickslabels(exp.benchmarks())
-    # formatter = FuncFormatter(convert_units)
-    formatter = ScalarFormatter()
-    formatter.set_scientific(False)
-    ax.yaxis.set_major_formatter(formatter)
-    plt.tight_layout()
-    plt.savefig(f"plots/{exp.name}_mem.svg", format="svg", bbox_inches="tight")
-    print("Graph saved to '%s'" % f"{exp.name}_mem.svg")
+# def plot_memh(exp):
+#     means = [[mean(exp.peaks(cfg, benchmark)) for benchmark in exp.benchmarks()] for cfg in exp.cfgs()]
+#     cis = [[confidence_interval(exp.peaks(cfg, benchmark)) for benchmark in exp.benchmarks()] for cfg in exp.cfgs()]
+#
+#     sns.set(style="whitegrid")
+#     plt.rc('text', usetex=True)
+#     plt.rc('font', family='sans-serif')
+#     fig, ax = plt.subplots(figsize=(5, 3))
+#     df = pd.DataFrame(zip(*means), index=exp.benchmarks())
+#     errs = pd.DataFrame(zip(*cis), index=exp.benchmarks())
+#     plot = df.plot(kind='barh', width=0.8, ax=ax, xerr=errs)
+#     plot.margins(x=0.01)
+#     ax.legend([name_map[c] for c in exp.cfgs()]).remove()
+#
+#     ax.spines['right'].set_visible(False)
+#     ax.spines['top'].set_visible(False)
+#     ax.set_xlabel(f'Max RSS ({unit_mapper[exp.name]}) (lower is better)', labelpad=20)
+#     ax.grid(linewidth=0.25)
+#     ax.spines['right'].set_visible(False)
+#     ax.spines['top'].set_visible(False)
+#     ax.xaxis.set_ticks_position('bottom')
+#     ax.yaxis.set_ticks_position('left')
+#     ax.xaxis.set_tick_params(which='minor', size=0)
+#     ax.yaxis.set_tick_params(which='minor', width=0)
+#     plt.yticks(range(0, len(exp.benchmarks())), exp.benchmarks(), ha="right")
+#     # ax.set_yticks(range, len(exp.benchmarks()))
+#     # ax.set_ytickslabels(exp.benchmarks())
+#     formatter = ScalarFormatter()
+#     formatter.set_scientific(False)
+#     ax.xaxis.set_major_formatter(formatter)
+#     plt.tight_layout()
+#     plt.savefig(f"plots/{exp.name}_mem.svg", format="svg", bbox_inches="tight")
+#     print("Graph saved to '%s'" % f"{exp.name}_mem.svg")
+#
+# def ploth(exp):
+#     means = [[mean(exp.iters(cfg, benchmark)) for benchmark in exp.benchmarks()] for cfg in exp.cfgs()]
+#     cis = [[confidence_interval(exp.iters(cfg, benchmark)) for benchmark in exp.benchmarks()] for cfg in exp.cfgs()]
+#
+#     sns.set(style="whitegrid")
+#     plt.rc('text', usetex=True)
+#     plt.rc('font', family='sans-serif')
+#     fig, ax = plt.subplots(figsize=(5, 3))
+#     df = pd.DataFrame(zip(*means), index=exp.benchmarks())
+#     errs = pd.DataFrame(zip(*cis), index=exp.benchmarks())
+#     plot = df.plot(kind='barh', width=0.8, ax=ax, xerr=errs)
+#     plot.margins(x=0.01)
+#     ax.legend([name_map[c] for c in exp.cfgs()])
+#
+#     ax.spines['right'].set_visible(False)
+#     ax.spines['top'].set_visible(False)
+#     ax.set_xlabel(f'Wall-clock time (ms) (lower is better)', labelpad=20)
+#     ax.grid(linewidth=0.25)
+#     ax.spines['right'].set_visible(False)
+#     ax.spines['top'].set_visible(False)
+#     ax.xaxis.set_ticks_position('bottom')
+#     ax.yaxis.set_ticks_position('left')
+#     ax.xaxis.set_tick_params(which='minor', size=0)
+#     ax.yaxis.set_tick_params(which='minor', width=0)
+#     plt.yticks(range(0, len(exp.benchmarks())), exp.benchmarks(), ha="right")
+#     # ax.set_yticks(range, len(exp.benchmarks()))
+#     # ax.set_ytickslabels(exp.benchmarks())
+#     formatter = ScalarFormatter()
+#     formatter.set_scientific(False)
+#     ax.xaxis.set_major_formatter(formatter)
+#     plt.tight_layout()
+#     plt.savefig(f"plots/{exp.name}.svg", format="svg", bbox_inches="tight")
+#     print("Graph saved to '%s'" % f"{exp.name}_mem.svg")
 
 # def plot_barh(exp):
 #     means = [[mean(exp.iters(cfg, benchmark)) for benchmark in exp.benchmarks()] for cfg in exp.cfgs()]
@@ -706,6 +653,28 @@ def plot_mem(exp):
 #     make_args(stats, 1)
 #     f.write(f"}}%\n")
 
+def confidence_interval(row, pexecs):
+    margin_of_error = t.ppf(0.995, pexecs - 1) * (row['std_dev'] / math.sqrt(pexecs))
+    return margin_of_error
+
+def load_awfy_results(f):
+    raw = pd.read_csv(f, sep='\t', skiprows=4, index_col='benchmark')
+    raw = raw[raw['value'] != 0]
+    pexecs = raw['invocation'].max();
+    iters = raw['iteration'].max();
+
+    df = raw.groupby(['benchmark', 'executor']).agg(mean=('value', 'mean'), std_dev=('value', 'std'))
+    df['ci'] = df.apply(confidence_interval, pexecs=pexecs, axis=1)
+    df = df.drop(['std_dev'], axis=1)
+    df = df.unstack()
+
+    means = df.drop('ci', axis=1).rename(columns={'mean' : 'value'})
+    cis = df.drop(['mean'], axis=1).rename(columns={'ci' : 'value'})
+
+    filename = f'plots/{exp_name(f)}.svg'
+
+    plot_perf(filename, means, cis)
+
 def load_sws_results(f):
     raw = pd.read_csv(f, header=None)
 
@@ -714,15 +683,11 @@ def load_sws_results(f):
     raw.columns = headers
     raw = raw.drop(['connect_errors', 'read_errors', 'write_errors', 'http_errors', 'timeouts', 'latency_min', 'latency_max', 'latency_stdev'], axis=1)
 
-    def ci(row, pexecs):
-        margin_of_error = t.ppf(0.995, pexecs - 1) * (row['std_dev'] / math.sqrt(pexecs))
-        return margin_of_error
-
     pd.set_option('display.float_format', '{:.4f}'.format)
     df = raw.mean().to_frame(name='mean')
     df.rename(columns={0: 'metric'}, inplace=True)
     df['std_dev'] = raw.std()
-    df['ci'] = df.apply(ci, pexecs=len(raw.index), axis=1)
+    df['ci'] = df.apply(confidence_interval, pexecs=len(raw.index), axis=1)
     df = df.drop(['std_dev'], axis=1)
 
     suffix = os.path.splitext(os.path.basename(f))[0]
@@ -731,6 +696,8 @@ def load_sws_results(f):
 def load_data(f):
     if "sws_benchmarks" in f:
         return load_sws_results(f)
+    elif "awfy_benchmarks" in f:
+        return load_awfy_results(f)
 
 def exp_name(f):
     if "barriers" in f:
@@ -741,6 +708,23 @@ def exp_name(f):
         exp = "perf"
     if "sws_benchmarks" in f:
         return f'sws_{exp}'
+    # AWFY
+    if "som_rs_ast_perf" in f:
+        return 'som_rs_ast_pef'
+    if "som_rs_ast_finalise" in f:
+        return 'som_rs_ast_finalise'
+    if "som_rs_ast_barriers" in f:
+        return 'som_rs_ast_barriers'
+    if "som_rs_bc_perf" in f:
+        return 'som_rs_bc_pef'
+    if "som_rs_bc_finalise" in f:
+        return 'som_rs_bc_finalise'
+    if "som_rs_bc_barriers" in f:
+        return 'som_rs_bc_barriers'
+    if "yksom_finalise" in f:
+        return 'yksom_finalise'
+    if "yksom_barriers" in f:
+        return 'yksom_barriers'
 
 EXP_MAP = {
     "sws_benchmarks": r"sws",
@@ -750,6 +734,8 @@ EXP_MAP = {
 CFG_LATEX_MAP = {
     "raw_gc": r"\ourgc",
     "raw_arc": r"\rc",
+    "perf_gc": r"\ourgc",
+    "perf_rc": r"\rc",
     "finalise_naive": r"\fnaive",
     "finalise_elide": r"\felide",
     "barriers_none": r"\bnone",
@@ -784,7 +770,16 @@ def plot_table(name, exp):
         f.write(ltx_df.sort_index().to_latex())
 
 args = sys.argv[1:]
-raw_data = [load_data(arg) for arg in sys.argv[1:]]
-combined_data = pd.concat([add_suffixes_to_columns(d, s) for d, s in raw_data], axis=1)
 
-plot_table(exp_name(args[1]), combined_data)
+if len(args) > 1:
+    raw_data = [load_data(arg) for arg in sys.argv[1:]]
+    # Combine the results from different files into a single data table
+    raw_data = pd.concat([add_suffixes_to_columns(d, s) for d, s in raw_data], axis=1)
+    name = args[1]
+else:
+    raw_data = load_data(args[0])
+    name = args[0]
+
+# plot_perf(raw_data)
+
+# plot_table(exp_name(name), raw_data)

@@ -29,19 +29,32 @@ YKSOM_BARRIERS = $(addprefix results/, yksom_barriers)
 YKSOM_EXPS = $(YKSOM_ELISION) $(YKSOM_BARRIERS)
 
 REBENCH_DATA = rebench.data
+RESULTS = $(PWD)/results
+RESULTS_PROCESSOR = ../process.py
 
 all: bench
 
 plot: plot-perf plot-barriers plot-elision
 
 plot-perf: plot-setup
-	@echo "TODO: plot-perf"
+	$(PYTHON_EXEC) $(RESULTS_PROCESSOR) \
+		$(RESULTS)/som_rs_ast_perf/rebench.data
 
 plot-barriers: plot-setup
-	@echo "TODO: plot-barriers"
+	$(PYTHON_EXEC) $(RESULTS_PROCESSOR) \
+		$(RESULTS)/som_rs_ast_barriers/rebench.data
+	$(PYTHON_EXEC) $(RESULTS_PROCESSOR) \
+		$(RESULTS)/som_rs_bc_barriers/rebench.data
+	$(PYTHON_EXEC) $(RESULTS_PROCESSOR) \
+		$(RESULTS)/yksom_barriers/rebench.data
 
 plot-elision: plot-setup
-	@echo "TODO: plot-elision"
+	$(PYTHON_EXEC) $(RESULTS_PROCESSOR) \
+		$(RESULTS)/som_rs_ast_elision/rebench.data
+	$(PYTHON_EXEC) $(RESULTS_PROCESSOR) \
+		$(RESULTS)/som_rs_bc_elision/rebench.data
+	$(PYTHON_EXEC) $(RESULTS_PROCESSOR) \
+		$(RESULTS)/yksom_elision/rebench.data
 
 plot-setup: venv
 	mkdir -p plots
