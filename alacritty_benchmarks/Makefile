@@ -61,8 +61,7 @@ build-perf: alacritty
 	cd alacritty && git reset --hard
 	cd alacritty && git apply $(PATCHES)/alacritty/arc.patch
 	cd alacritty && \
-		# RUSTC="../../bin/alloy/alloy/bin/rustc" \
-		RUSTC="/tmp/alloytmp/bin/rustc" \
+		RUSTC="../../bin/alloy/alloy/bin/rustc" \
 		cargo build --release --target-dir=$(PWD)/arc
 	cd alacritty && git reset --hard
 	cd alacritty && git apply $(PATCHES)/alacritty/gc.patch
