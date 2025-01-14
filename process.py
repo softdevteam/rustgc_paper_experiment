@@ -657,6 +657,28 @@ def confidence_interval(row, pexecs):
     margin_of_error = t.ppf(0.995, pexecs - 1) * (row['std_dev'] / math.sqrt(pexecs))
     return margin_of_error
 
+def load_alacritty_results(f):
+    raw = pd.read_csv(f, sep='\t', skiprows=4, index_col='benchmark')
+    pexecs = 30
+    raw = raw[raw['value'] != 0]
+    # Drop all the memory rows
+    raw = raw[raw['criterion'].str.contains('total', case=False, na=False)]
+    iters = raw['iteration'].max();
+
+    df = raw.groupby(['benchmark', 'executor']).agg(mean=('value', 'mean'), std_dev=('value', 'std'))
+    df['ci'] = df.apply(confidence_interval, pexecs=pexecs, axis=1)
+    df = df.drop(['std_dev'], axis=1)
+    df = df.unstack()
+    print(df)
+
+    means = df.drop('ci', axis=1).rename(columns={'mean' : 'value'})
+    cis = df.drop(['mean'], axis=1).rename(columns={'ci' : 'value'})
+    # print(means)
+
+    filename = f'plots/{exp_name(f)}.svg'
+
+    plot_perf(filename, means, cis)
+
 def load_awfy_results(f):
     raw = pd.read_csv(f, sep='\t', skiprows=4, index_col='benchmark')
     raw = raw[raw['value'] != 0]
@@ -698,6 +720,8 @@ def load_data(f):
         return load_sws_results(f)
     elif "awfy_benchmarks" in f:
         return load_awfy_results(f)
+    elif "alacritty_benchmarks" in f:
+        return load_alacritty_results(f)
 
 def exp_name(f):
     if "barriers" in f:
@@ -708,6 +732,8 @@ def exp_name(f):
         exp = "perf"
     if "sws_benchmarks" in f:
         return f'sws_{exp}'
+    if "alacritty_benchmarks" in f:
+        return f'alacritty_{exp}'
     # AWFY
     if "som_rs_ast_perf" in f:
         return 'som_rs_ast_pef'

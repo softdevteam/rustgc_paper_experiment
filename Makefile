@@ -8,7 +8,7 @@ PIP = $(VENV_DIR)/bin/pip
 PYTHON_EXEC = $(VENV_DIR)/bin/python
 export REBENCH_EXEC = $(VENV_DIR)/bin/rebench
 
-export REBENCH_PROCESSOR = $(PWD)/process_graph.py
+export REBENCH_PROCESSOR = $(PWD)/process.py
 
 # BUILD
 ALLOY_REPO = https://github.com/jacob-hughes/alloy
@@ -35,21 +35,21 @@ all: build bench plot
 plot: plot-perf plot-barriers plot-elision
 
 plot-perf:
-	cd sws_benchmarks && make plot-perf
-	cd awfy_benchmarks && make plot-perf
-	cd grmtools_benchmarks && make plot-perf
+	# cd sws_benchmarks && make plot-perf
+	# cd awfy_benchmarks && make plot-perf
+	# cd grmtools_benchmarks && make plot-perf
 	cd alacritty_benchmarks && make plot-perf
 
 plot-barriers:
-	cd sws_benchmarks && make plot-barriers
-	cd awfy_benchmarks && make plot-barriers
-	cd grmtools_benchmarks && make plot-barriers
+	# cd sws_benchmarks && make plot-barriers
+	# cd awfy_benchmarks && make plot-barriers
+	# cd grmtools_benchmarks && make plot-barriers
 	cd alacritty_benchmarks && make plot-barriers
 
 plot-elision:
-	cd sws_benchmarks && make plot-elision
-	cd awfy_benchmarks && make plot-elision
-	cd grmtools_benchmarks && make plot-elision
+	# cd sws_benchmarks && make plot-elision
+	# cd awfy_benchmarks && make plot-elision
+	# cd grmtools_benchmarks && make plot-elision
 	cd alacritty_benchmarks && make plot-elision
 
 bench: bench-perf bench-barriers bench-elision

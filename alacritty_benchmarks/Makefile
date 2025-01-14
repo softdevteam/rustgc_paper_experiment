@@ -21,6 +21,8 @@ BARRIERS = barriers_naive barriers_none barriers_opt
 ELISION = finalise_elide finalise_naive
 PERF = arc gc
 REBENCH_EXEC = $(VENV_DIR)/bin/rebench
+RESULTS = $(PWD)/results
+RESULTS_PROCESSOR = ../process.py
 
 XVFB_PID = $(PWD)/xvfb.pid
 
@@ -45,17 +47,19 @@ build: build-perf build-barriers build-elision
 plot: plot-perf plot-barriers plot-elision
 
 plot-perf: plot-setup
-	@echo "TODO: plot-perf"
+	$(PYTHON_EXEC) $(RESULTS_PROCESSOR) \
+		$(RESULTS)/perf/rebench.data
 
 plot-barriers: plot-setup
-	@echo "TODO: plot-barriers"
+	$(PYTHON_EXEC) $(RESULTS_PROCESSOR) \
+		$(RESULTS)/barriers/rebench.data
 
 plot-elision: plot-setup
-	@echo "TODO: plot-elision"
+	$(PYTHON_EXEC) $(RESULTS_PROCESSOR) \
+		$(RESULTS)/elision/rebench.data
 
 plot-setup: venv
 	mkdir -p plots
-	$(PYTHON_EXEC) merge_results.py
 
 build-perf: alacritty
 	cd alacritty && git reset --hard
