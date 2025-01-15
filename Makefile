@@ -6,18 +6,28 @@ PYTHON = python3
 VENV_DIR = $(PWD)/venv
 PIP = $(VENV_DIR)/bin/pip
 PYTHON_EXEC = $(VENV_DIR)/bin/python
-export REBENCH_EXEC = $(VENV_DIR)/bin/rebench
 
+export REBENCH_EXEC = $(VENV_DIR)/bin/rebench
 export REBENCH_PROCESSOR = $(PWD)/process.py
 
 # BUILD
-ALLOY_REPO = https://github.com/jacob-hughes/alloy
+ALLOY_REPO = https://github.com/softdevteam/alloy
+ALLOY_VERSION = master
 ALLOY_SRC_DIR = $(PWD)/alloy
-ALLOY_VERSION = handle_intrinsics
 ALLOY_BOOTSTRAP_STAGE = 1
-ALLOY_CFGS = alloy finalise_elide finalise_naive barriers_naive \
-	     barriers_none barriers_opt
-PATCHES  = $(PWD)/patches
+ALLOY_CFGS = $(wildcard $(PWD)/configs/*.config.toml)
+ALLOY_TARGETS := $(patsubst $(PWD)/configs/%.config.toml,$(BIN)/alloy/%,$(ALLOY_CFGS))
+
+build-alloy: $(ALLOY_CFGS) $(ALLOY_TARGETS)
+
+$(BIN)/alloy/%: $(PWD)/configs/%.config.toml
+	$(PYTHON) $(ALLOY_SRC_DIR)/x.py install \
+		--config $< \
+		--stage $(ALLOY_BOOTSTRAP_STAGE) \
+		--build-dir $(ALLOY_SRC_DIR)/build \
+		--set build.docs=false \
+		--set install.prefix=$@ \
+		--set install.sysconfdir=etc
 
 # BENCH
 export PEXECS ?= 10
@@ -96,20 +106,7 @@ build-elision:
 
 build-alloy: $(addprefix $(BIN)/alloy/, $(ALLOY_CFGS)) $(ALLOY_SRC_DIR)
 
-$(addprefix $(BIN)/alloy/, $(ALLOY_CFGS)): $(ALLOY_SRC_DIR)
-	cd $(ALLOY_SRC_DIR) && git reset --hard && ./x.py clean
-	if [ -f "$(PATCHES)/alloy/$(notdir $@).patch" ]; then \
-		echo "git apply $(PATCHES)/alloy/$(notdir $@).patch"; \
-		cd $(ALLOY_SRC_DIR) && git apply $(PATCHES)/alloy/$(notdir $@).patch; \
-	fi
-	$(PYTHON) $(ALLOY_SRC_DIR)/x.py install --config benchmark.config.toml \
-		--stage $(ALLOY_BOOTSTRAP_STAGE) \
-		--build-dir $(ALLOY_SRC_DIR)/build \
-		--set build.docs=false \
-		--set install.prefix=$@ \
-		--set install.sysconfdir=etc
-
-$(ALLOY_SRC_DIR): venv
+$(ALLOY_SRC_DIR):
 	git clone $(ALLOY_REPO) $(ALLOY_SRC_DIR)
 	cd $(ALLOY_SRC_DIR) && git checkout $(ALLOY_VERSION)
 
