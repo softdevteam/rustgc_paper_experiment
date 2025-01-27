@@ -58,7 +58,8 @@ $(ALLOY_TARGETS): $(ALLOY_SRC)
 		--set install.sysconfdir=etc 2>&1 | tee -a $(ALLOY_BUILD_LOG)
 
 clean:
-	rm -rf $(ALLOY_SRC_DIR)
+	rm -rf $(ALLOY_SRC)
+	rm -rf results/
 	@echo "Clean"
 
 clean-confirm:
