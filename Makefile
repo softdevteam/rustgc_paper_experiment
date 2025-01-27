@@ -17,19 +17,12 @@ ALLOY_TARGETS := $(patsubst $(PWD)/configs/alloy/%.config.toml,$(BIN)/alloy/%,$(
 
 ALLOY_BUILD_LOG = $(PWD)/alloy.build.log
 
-# BUILD
-ALLOY_REPO = https://github.com/jacob-hughes/alloy
-ALLOY_SRC_DIR = $(PWD)/alloy
-ALLOY_VERSION = handle_intrinsics
-ALLOY_BOOTSTRAP_STAGE = 1
-ALLOY_CFGS = alloy finalise_elide finalise_naive barriers_naive \
-	     barriers_none barriers_opt
-PATCHES  = $(PWD)/patches
+RESULTS = $(PWD)/results
+SUITES = som-rs-ast som-rs-octave-ast yksom
+EXPERIMENTS = gcrc premopt elision
 
-# BENCH
-export PEXECS ?= 10
-# Only applicable for AWFY and CLBG
-export ITERS ?= 1
+DATA = $(foreach s, $(SUITES), $(foreach e, $(EXPERIMENTS), $(RESULTS)/test/$e/$s/perf.csv))
+PLOTS = $(patsubst $(RESULTS)/test/%.csv, $(RESULTS)/test/%.svg, $(DATA))
 
 all: build
 

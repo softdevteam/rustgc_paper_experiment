@@ -1,5 +1,11 @@
-venv/
-plots/
-bin/
-/bdwgc/
 /alloy/
+/bdwgc/
+bin/
+build/
+plots/
+results/
+venv/
+src/
+SOM/
+
+*.log
