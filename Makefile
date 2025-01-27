@@ -1,7 +1,11 @@
+export PEXECS ?= 10
+
+REBENCH_EXEC = $(VENV)/bin/rebench
+REBENCH_PROCESSOR = $(PWD)/process.py
+
 PWD != pwd
 BIN = $(PWD)/bin
 
-# VENV
 PYTHON = python3
 VENV = $(PWD)/venv
 PIP = $(VENV)/bin/pip
