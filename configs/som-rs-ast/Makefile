@@ -5,7 +5,7 @@ BIN = $(PWD)/bin/$(ALLOY_CFG)/$(PATCH)
 SOMRS_REPO = https://github.com/Hirevo/som-rs
 SOMRS_VERSION = 35b780cbee765cca24201fe063d3f1055ec7f608
 
-export RUSTC = $(PWD)/../../bin/alloy/$(ALLOY_CFG)/bin/rustc
+export RUSTC = $(PWD)/../alloy/bin/$(ALLOY_CFG)/bin/rustc
 export ALLOY_CFG
 export PATCH
 
@@ -23,10 +23,6 @@ $(BIN): $(PWD)/src
 		--path $(PWD)/src/som-interpreter-ast \
 		--target-dir $(PWD)/build/$(ALLOY_CFG)/$(PATCH) \
 		--root $@
-	cargo install \
-		--path $(PWD)/src/som-interpreter-bc \
-		--target-dir $(PWD)/build/$(ALLOY_CFG)/$(PATCH) \
-		--root $@
 
 $(PWD)/src:
 	git clone --recursive $(SOMRS_REPO) $@
@@ -34,5 +30,4 @@ $(PWD)/src:
 	ln -s $@/core-lib $(PWD)/SOM
 
 clean:
-	rm -rf $(PWD)/bin $(PWD)/build $(PWD)/src
-	rm -f som-rs.build.log
+	rm -rf $(PWD)/bin $(PWD)/build $(PWD)/src $(PWD)/SOM
