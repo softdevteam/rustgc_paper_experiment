@@ -9,7 +9,7 @@ PYTHON_EXEC = $(VENV)/bin/python
 
 RESULTS = $(PWD)/results
 CONFIGS = $(PWD)/configs
-SUITES = som-rs-ast som-rs-bc yksom
+SUITES = som-rs-ast som-rs-bc
 # SUITES = som-rs-ast
 # EXPERIMENTS = gcrc premopt elision
 EXPERIMENTS = premopt
@@ -25,7 +25,18 @@ REBENCH_PROCESSOR = $(PWD)/process.py
 all: build
 
 .PHONY: venv
-.PHONY: build build-alloy plot
+.PHONY: build build-alloy
+.PHONY: bench plot
+.PHONY: clean clean-alloy clean-results clean-plots clean-confirm
+
+build: build-alloy
+
+build-alloy:
+	cd configs/alloy && make
+
+build:
+	$(foreach s, $(SUITES), cd $(CONFIGS)/$s && make build;)
+
 
 venv: $(VENV)/bin/activate
 
@@ -33,33 +44,8 @@ $(VENV)/bin/activate: requirements.txt
 	$(PYTHON) -m venv $(VENV)
 	$(PIP) install -r requirements.txt
 
-build-alloy:
-	cd configs/alloy && make
 
-build: build-alloy
-
-plot: venv $(PERF_PLOTS)
-
-geomean: venv
-	$(PYTHON_EXEC) geomean.py
-
-
-clean:
-	# rm -rf $(ALLOY_SRC)
-	rm -rf logs/*
-	@echo "Clean"
-
-clean-builds:
-	$(foreach s, $(SUITES), cd $(CONFIGS)/$s && make clean;)
-
-clean-results:
-	rm -rf $(RESULTS)
-
-clean-confirm:
-	@echo $@
-	@( read -p "Are you sure? [y/N]: " sure && case "$$sure" in [yY]) true;; *) false;; esac )
-
-bench-perf: build-alloy venv $(PERF_DATA)
+bench: build-alloy venv $(PERF_DATA)
 
 $(PERF_DATA):
 	mkdir -p $(dir $@)
@@ -72,7 +58,28 @@ $(PERF_DATA):
 		-exp $(notdir $(patsubst %/,%,$(dir $@))) \
 		$(CONFIGS)/$(notdir $(patsubst %/,%,$(dir $@)))/rebench.conf
 
+plot: bench venv $(PERF_PLOTS)
+
 $(PERF_PLOTS):
 	mkdir -p $(dir $@)
 	$(PYTHON_EXEC) $(REBENCH_PROCESSOR) \
 		$(patsubst $(PWD)/plots/%, $(RESULTS)/%, $(patsubst %.svg, %.csv, $@)) $@
+
+clean: clean-confirm clean-alloy clean-builds clean-results clean-plots
+	@echo "Clean"
+
+clean-alloy:
+	cd configs/alloy && make clean
+
+clean-builds:
+	$(foreach s, $(SUITES), cd $(CONFIGS)/$s && make clean;)
+
+clean-results:
+	rm -rf $(RESULTS)
+
+clean-plots:
+	rm -rf plots
+
+clean-confirm:
+	@echo $@
+	@( read -p "Are you sure? [y/N]: " sure && case "$$sure" in [yY]) true;; *) false;; esac )
