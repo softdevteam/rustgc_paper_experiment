@@ -18,7 +18,7 @@ $(TARGETS): $(PWD)/src
 	mkdir -p $(PWD)/build
 	cd $(PWD)/src && git reset --hard && git apply $(PWD)/$(notdir $@).patch
 	@echo "RUSTC=$(PWD)/../alloy/bin/$(notdir $(patsubst %/,%,$(dir $@)))/bin/rustc"
-	export RUSTC="$(PWD)/../alloy/bin/$(notdir $(patsubst %/,%,$(dir $@)))/bin/rustc" \
+	RUSTC="$(PWD)/../alloy/bin/$(notdir $(patsubst %/,%,$(dir $@)))/bin/rustc" \
 	cargo install \
 		--path $(PWD)/src/som-interpreter-ast \
 		--target-dir $(PWD)/build/$(@:$(PWD)/bin/%=%) \

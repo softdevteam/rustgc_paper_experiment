@@ -1,25 +1,23 @@
 export PATH := /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$(PATH)
 PWD != pwd
-BIN = $(PWD)/bin/$(ALLOY_CFG)/$(PATCH)
+TARGETS = $(addprefix $(PWD)/bin/, opt/gc bnaive/gc bnone/gc)
 
 YKSOM_REPO = https://github.com/softdevteam/yksom
 YKSOM_VERSION = master
-
-export RUSTC = $(PWD)/../alloy/bin/$(ALLOY_CFG)/bin/rustc
-export ALLOY_CFG
 
 all: build
 
 .PHONY: all build clean
 
-build: $(BIN)
+build: $(TARGETS)
 
-$(BIN): $(PWD)/src
+$(TARGETS): $(PWD)/src
 	mkdir -p $(PWD)/build
-	@echo "RUSTC=$(RUSTC)"
+	@echo "RUSTC=$(PWD)/../alloy/bin/$(notdir $(patsubst %/,%,$(dir $@)))/bin/rustc"
+	RUSTC="$(PWD)/../alloy/bin/$(notdir $(patsubst %/,%,$(dir $@)))/bin/rustc" \
 	cargo install \
 		--path $(PWD)/src \
-		--target-dir $(PWD)/build/$(ALLOY_CFG)/gc \
+		--target-dir $(PWD)/build/$(@:$(PWD)/bin/%=%) \
 		--root $@
 
 $(PWD)/src:
@@ -29,4 +27,3 @@ $(PWD)/src:
 
 clean:
 	rm -rf $(PWD)/bin $(PWD)/build $(PWD)/src $(PWD)/SOM
-	rm -f yksom.build.log

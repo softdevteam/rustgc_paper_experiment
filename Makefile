@@ -9,7 +9,7 @@ PYTHON_EXEC = $(VENV)/bin/python
 
 RESULTS = $(PWD)/results
 CONFIGS = $(PWD)/configs
-SUITES = som-rs-ast som-rs-bc
+SUITES = som-rs-ast som-rs-bc yksom
 # SUITES = som-rs-ast
 # EXPERIMENTS = gcrc premopt elision
 EXPERIMENTS = premopt
@@ -29,12 +29,10 @@ all: build
 .PHONY: bench plot
 .PHONY: clean clean-alloy clean-results clean-plots clean-confirm
 
-build: build-alloy
-
 build-alloy:
 	cd configs/alloy && make
 
-build:
+build: build-alloy
 	$(foreach s, $(SUITES), cd $(CONFIGS)/$s && make build;)
 
 
@@ -45,7 +43,7 @@ $(VENV)/bin/activate: requirements.txt
 	$(PIP) install -r requirements.txt
 
 
-bench: build-alloy venv $(PERF_DATA)
+bench: build venv $(PERF_DATA)
 
 $(PERF_DATA):
 	mkdir -p $(dir $@)
