@@ -63,7 +63,7 @@ METRICS = {
 }
 
 
-def plot(filename, means, errs, width, kind):
+def plot_bar(filename, means, errs, width, kind):
     sns.set(style="whitegrid")
     plt.rc("text", usetex=True)
     plt.rc("font", family="serif")
@@ -81,9 +81,13 @@ def plot(filename, means, errs, width, kind):
     ax.spines["right"].set_visible(False)
     ax.spines["top"].set_visible(False)
     if kind == "perf":
+        formatter = ScalarFormatter()
+        formatter.set_scientific(False)
+        ax.yaxis.set_major_formatter(formatter)
         ax.set_ylabel("Wall-clock time (ms)\n(lower is better)")
     else:
         ax.set_ylabel("Maximum resident set size (KiB)\n(lower is better)")
+        ax.yaxis.set_major_formatter(FuncFormatter(human_readable_bytes))
     ax.grid(linewidth=0.25)
     ax.spines["right"].set_visible(False)
     ax.spines["top"].set_visible(False)
@@ -92,9 +96,6 @@ def plot(filename, means, errs, width, kind):
     ax.xaxis.set_tick_params(which="minor", size=0)
     ax.yaxis.set_tick_params(which="minor", width=0)
     ax.xaxis.label.set_visible(False)
-    formatter = ScalarFormatter()
-    formatter.set_scientific(False)
-    ax.yaxis.set_major_formatter(formatter)
     plt.tight_layout()
     plt.savefig(filename, format="svg", bbox_inches="tight")
 
@@ -189,17 +190,69 @@ def raw_metrics(mdir):
     return pd.concat(m, ignore_index=True)
 
 
+def human_readable_bytes(x, pos):
+    if x < 1024:
+        return f"{x} B"
+    elif x < 1024**2:
+        return f"{x/1024:.1f} KiB"
+    elif x < 1024**3:
+        return f"{x/1024**2:.1f} MiB"
+    else:
+        return f"{x/1024**3:.1f} GiB"
+
+
+def plot_heaptrack(data, outdir):
+    files = glob.glob(f"{data}/*.massif")
+    data = []
+    for f in files:
+        base = os.path.splitext(os.path.basename(f))[0].split(".")
+        with open(f, "r") as f:
+            for line in f:
+                if line.startswith("snapshot="):
+                    snapshot = int(line.split("=")[1])
+                elif line.startswith("time="):
+                    time = float(line.split("=")[1])
+                elif line.startswith("mem_heap_B="):
+                    mem_heap = int(line.split("=")[1])
+                    data.append(
+                        {
+                            "configuration": base[0],
+                            "benchmark": base[1],
+                            "snapshot": snapshot,
+                            "time": time,
+                            "mem_heap_B": mem_heap,
+                        }
+                    )
+    df = pd.DataFrame(data)
+
+    for benchmark, snapshots in df.groupby("benchmark"):
+        print(benchmark)
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.set_title(f"{benchmark}")
+        ax.set_xlabel("Time")
+        ax.set_ylabel("Memory Usage")
+        ax.yaxis.set_major_formatter(FuncFormatter(human_readable_bytes))
+
+        for cfg, data in snapshots.groupby("configuration"):
+            ax.plot(data["time"], data["mem_heap_B"], label=f"{cfg}")
+
+        ax.legend()
+        ax.grid(True, linestyle="--", alpha=0.7)
+        plt.tight_layout()
+        plt.savefig(
+            outdir / f"{benchmark.lower()}.svg", format="svg", bbox_inches="tight"
+        )
+
+
 print(f"==> processing results for {sys.argv[1:]}")
 
 infile = sys.argv[1]
-infile_metrics = Path(infile).parent / "metrics"
+resultsdir = Path(infile).parent
 suite = Path(sys.argv[2]).parts[-2]
 experiment = Path(sys.argv[2]).parts[-3]
 datapoint = Path(sys.argv[2]).stem
 outdir = Path(sys.argv[2]).parent
 outfile = sys.argv[2]
-outfile_gmean = outdir / f"{datapoint}_gmean.svg"
-out_metrics_gmean = outdir / "metrics_gmean.tex"
 
 df = pd.read_csv(infile, sep="\t", skiprows=4, index_col="benchmark")
 pexecs = int(df["invocation"].max())
