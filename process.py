@@ -107,8 +107,6 @@ def bootstrap_geomean_ci(means, num_bootstraps=10000, confidence=0.99, symmetric
     # libkalibera tends to prefer when deealing with larger sample sizes.
     # Though this is more computationally expensive and the maths looks a bit
     # tricky to get right!
-    print("Hello")
-    print(means)
     method = "Bca"
     return bootstrap(means, stats.gmean, method, num_bootstraps, confidence, symmetric)
 
@@ -234,7 +232,6 @@ def parse_heaptrack(dir):
 
 def plot_mem_time_series(data, outdir):
     for benchmark, cfgs in data.groupby("benchmark"):
-        print(benchmark)
         fig, ax = plt.subplots(figsize=(10, 6))
         ax.set_title(f"{benchmark}")
         ax.set_xlabel("Time")
@@ -297,9 +294,7 @@ mem = (
     .apply(bootstrap_mean_ci)
     .unstack()
 )
-#
 plot_bar(outdir / "mem_average.svg", mem["value"], mem["ci"], kind="mem", width=8)
-#
 mem_summary = (
     mem.groupby("configuration")["value"].apply(bootstrap_geomean_ci).unstack()
 )
