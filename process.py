@@ -63,18 +63,80 @@ METRICS = {
 }
 
 
+def bootstrap(
+    values, kind, method, num_bootstraps=10000, confidence=0.99, symmetric=True
+):
+    res = stats.bootstrap(
+        (values,),
+        statistic=kind,
+        n_resamples=num_bootstraps,
+        confidence_level=confidence,
+        method=method,
+        vectorized=True,
+    )
+
+    value = kind(values)
+    ci_lower, ci_upper = res.confidence_interval
+    if symmetric:
+        margin = max(value - ci_lower, ci_upper - value)
+        data = {
+            "value": value,
+            "ci": margin,
+        }
+    else:
+        data = {
+            "value": value,
+            "ci_lower": res.confidence_interval.low,
+            "ci_upper": res.confidence_interval.high,
+        }
+
+    return pd.Series(data)
+
+
+def bootstrap_geomean_ci(means, num_bootstraps=10000, confidence=0.99, symmetric=False):
+    # We use the BCa (bias-corrected and accelerated) bootstrap method. This
+    # can provide more accurate CIs over the more straightforward percentile
+    # method but it is more computationally expensive -- though this doesn't
+    # matter so much when we run this using PyPy.
+    #
+    # This is generally better for smaller sample sizes such as ours (where the
+    # number of pexecs < 100), and where the dataset is not known to be
+    # normally distributed.
+    #
+    # We could also consider using the studentized bootstrap method which
+    # libkalibera tends to prefer when deealing with larger sample sizes.
+    # Though this is more computationally expensive and the maths looks a bit
+    # tricky to get right!
+    print("Hello")
+    print(means)
+    method = "Bca"
+    return bootstrap(means, stats.gmean, method, num_bootstraps, confidence, symmetric)
+
+
+def bootstrap_mean_ci(raw_data, num_bootstraps=10000, confidence=0.99):
+    return bootstrap(
+        raw_data, np.mean, "percentile", num_bootstraps, confidence, symmetric=True
+    )
+
+
+def bootstrap_max_ci(raw_data, num_bootstraps=10000, confidence=0.99):
+    return bootstrap(
+        raw_data, np.max, "percentile", num_bootstraps, confidence, symmetric=True
+    )
+
+
 def plot_bar(filename, means, errs, width, kind):
     sns.set(style="whitegrid")
     plt.rc("text", usetex=True)
     plt.rc("font", family="serif")
     fig, ax = plt.subplots(figsize=(width, 4))
 
-    means = means.rename(columns=CFGS)
-    errs = errs.rename(columns=CFGS)
+    # means = means.rename(columns=CFGS)
+    # errs = errs.rename(columns=CFGS)
     means.plot(kind="bar", ax=ax, width=0.8, yerr=errs)
 
-    if len(means.columns) == 1:
-        plt.gca().get_legend().remove()
+    # if len(means.columns) == 1:
+    #     plt.gca().get_legend().remove()
 
     ax.set_xticklabels(means.index, rotation=45, ha="right")
 
@@ -100,44 +162,6 @@ def plot_bar(filename, means, errs, width, kind):
     plt.savefig(filename, format="svg", bbox_inches="tight")
 
 
-def overall_gmean(data):
-    means = data.groupby(["executor", "benchmark"])["value"].mean()
-    gmeans = []
-    cis = []
-
-    for config in means.index.get_level_values(0).unique():
-        data = means[config]
-        gmean = stats.gmean(data)
-
-        data_array = np.array(data).reshape(-1, 1)
-        boot_result = stats.bootstrap(
-            (data_array,),
-            stats.gmean,
-            n_resamples=9999,
-            confidence_level=0.99,
-            method="BCa",  # Bias-corrected and accelerated bootstrap
-        )
-
-        ci_lower, ci_upper = boot_result.confidence_interval
-        gmeans.append(
-            {
-                "configuration": config,
-                "geometric_mean": gmean,
-            }
-        )
-        cis.append(
-            {
-                "configuration": config,
-                "ci_lower": gmean - ci_lower[0],
-                "ci_upper": ci_upper[0] - gmean,
-            }
-        )
-
-    gidf = pd.DataFrame(gmeans).set_index("configuration")
-    cidf = pd.DataFrame(cis).set_index("configuration").transpose().to_numpy()
-    return (gidf, cidf)
-
-
 def mk_table(filename, vals, cis, columns):
     df = pd.DataFrame()
     for v, c in zip(vals.columns, cis.columns):
@@ -152,25 +176,7 @@ def ci(row, pexecs):
     return Z * (row / math.sqrt(pexecs))
 
 
-def means(csv):
-    global pexecs
-    pexecs = int(df["invocation"].max())
-    assert pexecs == PEXECS
-
-    perf = (
-        df.loc[df["criterion"] == "total"]
-        .groupby(["benchmark", "executor"])["value"]
-        .mean()
-    )
-    mem = (
-        df.loc[df["criterion"] == "MaxRSS"]
-        .groupby(["benchmark", "executor"])["value"]
-        .mean()
-    )
-    return (perf, mem)
-
-
-def raw_metrics(mdir):
+def parse_metrics(mdir):
     csvs = glob.glob(f"{mdir}/*.log")
     m = []
     for f in csvs:
@@ -190,7 +196,7 @@ def raw_metrics(mdir):
     return pd.concat(m, ignore_index=True)
 
 
-def human_readable_bytes(x, pos):
+def human_readable_bytes(x, pos=None):
     if x < 1024:
         return f"{x} B"
     elif x < 1024**2:
@@ -201,8 +207,8 @@ def human_readable_bytes(x, pos):
         return f"{x/1024**3:.1f} GiB"
 
 
-def plot_heaptrack(data, outdir):
-    files = glob.glob(f"{data}/*.massif")
+def parse_heaptrack(dir):
+    files = glob.glob(f"{dir}/*.massif")
     data = []
     for f in files:
         base = os.path.splitext(os.path.basename(f))[0].split(".")
@@ -223,9 +229,11 @@ def plot_heaptrack(data, outdir):
                             "mem_heap_B": mem_heap,
                         }
                     )
-    df = pd.DataFrame(data)
+    return pd.DataFrame(data)
 
-    for benchmark, snapshots in df.groupby("benchmark"):
+
+def plot_mem_time_series(data, outdir):
+    for benchmark, cfgs in data.groupby("benchmark"):
         print(benchmark)
         fig, ax = plt.subplots(figsize=(10, 6))
         ax.set_title(f"{benchmark}")
@@ -233,8 +241,8 @@ def plot_heaptrack(data, outdir):
         ax.set_ylabel("Memory Usage")
         ax.yaxis.set_major_formatter(FuncFormatter(human_readable_bytes))
 
-        for cfg, data in snapshots.groupby("configuration"):
-            ax.plot(data["time"], data["mem_heap_B"], label=f"{cfg}")
+        for cfg, snapshot in cfgs.groupby("configuration"):
+            ax.plot(snapshot["time"], snapshot["mem_heap_B"], label=f"{cfg}")
 
         ax.legend()
         ax.grid(True, linestyle="--", alpha=0.7)
@@ -260,29 +268,62 @@ assert pexecs == PEXECS
 
 perf = (
     df.loc[df["criterion"] == "total"]
-    .groupby(["benchmark", "executor"])
-    .agg(value=("value", "mean"), ci=("value", lambda x: ci(x.std(), pexecs)))
+    .groupby(["benchmark", "executor"])["value"]
+    .apply(bootstrap_mean_ci)
+    .unstack()
 )
 
-mem = (
-    df.loc[df["criterion"] == "MaxRSS"]
-    .groupby(["benchmark", "executor"])
-    .agg(value=("value", "mean"), ci=("value", lambda x: ci(x.std(), pexecs)))
-)
-
-plot(
+plot_bar(
     outdir / "perf.svg",
-    perf["value"].unstack(),
-    perf["ci"].unstack(),
+    perf["value"],
+    perf["ci"],
     width=8,
     kind="perf",
 )
-plot(
-    outdir / "mem.svg", mem["value"].unstack(), mem["ci"].unstack(), width=8, kind="mem"
+
+max_rss = (
+    df.loc[df["criterion"] == "MaxRSS"]
+    .groupby(["benchmark", "executor"])["value"]
+    .apply(bootstrap_mean_ci)
+    .unstack()
 )
 
+plot_bar(outdir / "max_rss.svg", max_rss["value"], max_rss["ci"], width=8, kind="mem")
 
-raw = raw_metrics(infile_metrics).groupby(["benchmark", "configuration"])
+mem_data = parse_heaptrack(resultsdir / "heaptrack")
+
+mem = (
+    mem_data.groupby(["benchmark", "configuration"])["mem_heap_B"]
+    .apply(bootstrap_mean_ci)
+    .unstack()
+)
+#
+plot_bar(outdir / "mem_average.svg", mem["value"], mem["ci"], kind="mem", width=8)
+#
+mem_summary = (
+    mem.groupby("configuration")["value"].apply(bootstrap_geomean_ci).unstack()
+)
+
+max = (
+    mem_data.groupby(["benchmark", "configuration"])["mem_heap_B"]
+    .apply(bootstrap_max_ci)
+    .unstack()
+)
+
+plot_bar(
+    outdir / "mem_max.svg",
+    max["value"],
+    max["ci"],
+    kind="mem",
+    width=8,
+)
+
+max_summary = (
+    max.groupby("configuration")["value"].apply(bootstrap_geomean_ci).unstack()
+)
+plot_mem_time_series(mem_data, outdir / "mem")
+
+raw = parse_metrics(outdir / "metrics").groupby(["benchmark", "configuration"])
 metrics = raw.mean()
 cis = raw.std().apply(ci, pexecs=pexecs)
 mk_table(outdir / "metrics.tex", metrics, cis, columns=METRICS)
