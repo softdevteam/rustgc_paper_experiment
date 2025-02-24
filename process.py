@@ -43,6 +43,8 @@ SUITES = {
 }
 
 CFGS = {
+    "gc": "Alloy",
+    "rc": "RefCount (non-atomic)",
     "bopt-perf": "Barriers Opt",
     "bnaive-perf": "Barriers Naive",
     "bnone-perf": "Barriers None",
@@ -123,31 +125,45 @@ def bootstrap_max_ci(raw_data, num_bootstraps=10000, confidence=0.99):
     )
 
 
-def plot_bar(filename, means, errs, width, kind):
+def pretty_name(col):
+    l = col.split()
+    if len(l) == 1:
+        return CFGS[l[0]]
+    else:
+        return CFGS[l[1]]
+
+
+def plot_bar(title, filename, data, width, unit):
+    values = data[0]
+    errs = data[1]
     sns.set(style="whitegrid")
     plt.rc("text", usetex=True)
     plt.rc("font", family="serif")
     fig, ax = plt.subplots(figsize=(width, 4))
 
-    # means = means.rename(columns=CFGS)
-    # errs = errs.rename(columns=CFGS)
-    means.plot(kind="bar", ax=ax, width=0.8, yerr=errs)
+    values = values.rename(columns=pretty_name)
+    errs = errs.rename(columns=pretty_name)
+    values.plot(kind="bar", ax=ax, width=0.8, yerr=errs)
 
-    # if len(means.columns) == 1:
-    #     plt.gca().get_legend().remove()
+    ax.legend().set_title(None)
+    if len(values.columns) == 1:
+        ax.legend().remove()
 
-    ax.set_xticklabels(means.index, rotation=45, ha="right")
+    ax.set_xticklabels(values.index, rotation=45, ha="right")
 
     ax.spines["right"].set_visible(False)
     ax.spines["top"].set_visible(False)
-    if kind == "perf":
+    if unit == "ms":
         formatter = ScalarFormatter()
         formatter.set_scientific(False)
         ax.yaxis.set_major_formatter(formatter)
-        ax.set_ylabel("Wall-clock time (ms)\n(lower is better)")
-    else:
-        ax.set_ylabel("Maximum resident set size (KiB)\n(lower is better)")
+    elif unit == "b":
         ax.yaxis.set_major_formatter(FuncFormatter(human_readable_bytes))
+    elif unit == "kb":
+        ax.yaxis.set_major_formatter(FuncFormatter(human_readable_bytes))
+    else:
+        raise ValueError("Unknown unit")
+    ax.set_ylabel(title)
     ax.grid(linewidth=0.25)
     ax.spines["right"].set_visible(False)
     ax.spines["top"].set_visible(False)
@@ -158,6 +174,30 @@ def plot_bar(filename, means, errs, width, kind):
     ax.xaxis.label.set_visible(False)
     plt.tight_layout()
     plt.savefig(filename, format="svg", bbox_inches="tight")
+    print(f"==> Created plot: {filename}")
+
+
+def plot_mem_time_series(data, outdir):
+    for benchmark, cfgs in data.groupby("benchmark"):
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.set_title(f"{benchmark}")
+        ax.set_xlabel("Time")
+        ax.set_ylabel("Memory Usage")
+        ax.yaxis.set_major_formatter(FuncFormatter(human_readable_bytes))
+
+        for cfg, snapshot in cfgs.groupby("configuration"):
+            ax.plot(snapshot["time"], snapshot["mem_heap_B"], label=f"{cfg}")
+
+        ax.legend()
+        ax.grid(True, linestyle="--", alpha=0.7)
+        plt.tight_layout()
+        plt.savefig(
+            outdir / f"{benchmark.lower()}.svg", format="svg", bbox_inches="tight"
+        )
+        plt.close(fig)
+        print(
+            f"==> Saved time-series memory results to {outdir / f"{benchmark.lower()}"}"
+        )
 
 
 def mk_table(filename, vals, cis, columns):
@@ -230,25 +270,6 @@ def parse_heaptrack(dir):
     return pd.DataFrame(data)
 
 
-def plot_mem_time_series(data, outdir):
-    for benchmark, cfgs in data.groupby("benchmark"):
-        fig, ax = plt.subplots(figsize=(10, 6))
-        ax.set_title(f"{benchmark}")
-        ax.set_xlabel("Time")
-        ax.set_ylabel("Memory Usage")
-        ax.yaxis.set_major_formatter(FuncFormatter(human_readable_bytes))
-
-        for cfg, snapshot in cfgs.groupby("configuration"):
-            ax.plot(snapshot["time"], snapshot["mem_heap_B"], label=f"{cfg}")
-
-        ax.legend()
-        ax.grid(True, linestyle="--", alpha=0.7)
-        plt.tight_layout()
-        plt.savefig(
-            outdir / f"{benchmark.lower()}.svg", format="svg", bbox_inches="tight"
-        )
-
-
 print(f"==> processing results for {sys.argv[1:]}")
 
 infile = sys.argv[1]
@@ -259,66 +280,69 @@ datapoint = Path(sys.argv[2]).stem
 outdir = Path(sys.argv[2]).parent
 outfile = sys.argv[2]
 
-df = pd.read_csv(infile, sep="\t", skiprows=4, index_col="benchmark")
-pexecs = int(df["invocation"].max())
-assert pexecs == PEXECS
 
-perf = (
-    df.loc[df["criterion"] == "total"]
-    .groupby(["benchmark", "executor"])["value"]
-    .apply(bootstrap_mean_ci)
-    .unstack()
-)
+def parse_perfdata(csv):
+    print(f"==> parsing perf data from {csv}")
+    df = pd.read_csv(csv, sep="\t", skiprows=4, index_col="benchmark")
+    pexecs = int(df["invocation"].max())
+    assert pexecs == PEXECS
+    perf = df[df["criterion"] == "total"].rename(columns={"value": "wallclock"})
+    perf = perf[["executor", "wallclock"]]
+    rss = df[df["criterion"] == "MaxRSS"].rename(columns={"value": "maxrss"})
+    rss = rss[["executor", "maxrss"]]
+    df = pd.merge(perf, rss, on=["benchmark", "executor"]).groupby(
+        ["benchmark", "executor"]
+    )
+    return df
+
+
+def aggregate(grouped, col, method):
+    df = grouped[col].apply(method).unstack().unstack()
+    return (df["value"], df["ci"])
+
+
+pdata = parse_perfdata(infile)
+
+perf = aggregate(pdata, "wallclock", bootstrap_mean_ci)
+maxrss = aggregate(pdata, "maxrss", bootstrap_mean_ci)
 
 plot_bar(
+    "Wall-clock time (ms)\n(lower is better)",
     outdir / "perf.svg",
-    perf["value"],
-    perf["ci"],
+    perf,
     width=8,
-    kind="perf",
+    unit="ms",
+)
+plot_bar(
+    "Maximum resident set size (KiB)\n(lower is better)",
+    outdir / "max_rss.svg",
+    maxrss,
+    width=8,
+    unit="kb",
 )
 
-max_rss = (
-    df.loc[df["criterion"] == "MaxRSS"]
-    .groupby(["benchmark", "executor"])["value"]
-    .apply(bootstrap_mean_ci)
-    .unstack()
-)
-
-plot_bar(outdir / "max_rss.svg", max_rss["value"], max_rss["ci"], width=8, kind="mem")
-
-mem_data = parse_heaptrack(resultsdir / "heaptrack")
-
-mem = (
-    mem_data.groupby(["benchmark", "configuration"])["mem_heap_B"]
-    .apply(bootstrap_mean_ci)
-    .unstack()
-)
-plot_bar(outdir / "mem_average.svg", mem["value"], mem["ci"], kind="mem", width=8)
-mem_summary = (
-    mem.groupby("configuration")["value"].apply(bootstrap_geomean_ci).unstack()
-)
-
-max = (
-    mem_data.groupby(["benchmark", "configuration"])["mem_heap_B"]
-    .apply(bootstrap_max_ci)
-    .unstack()
-)
+mdata = parse_heaptrack(resultsdir / "heaptrack")
+plot_mem_time_series(mdata, outdir / "mem")
+mdata = mdata.groupby(["benchmark", "configuration"])
+avgmem = aggregate(mdata, "mem_heap_B", bootstrap_mean_ci)
+maxmem = aggregate(mdata, "mem_heap_B", bootstrap_max_ci)
 
 plot_bar(
-    outdir / "mem_max.svg",
-    max["value"],
-    max["ci"],
-    kind="mem",
+    "Average heap usage (KiB)\n(lower is better)",
+    outdir / "avg_heap.svg",
+    avgmem,
     width=8,
+    unit="b",
+)
+plot_bar(
+    "Max heap usage (KiB)\n(lower is better)",
+    outdir / "max_heap.svg",
+    avgmem,
+    width=8,
+    unit="b",
 )
 
-max_summary = (
-    max.groupby("configuration")["value"].apply(bootstrap_geomean_ci).unstack()
-)
-plot_mem_time_series(mem_data, outdir / "mem")
-
-raw = parse_metrics(outdir / "metrics").groupby(["benchmark", "configuration"])
+raw = parse_metrics(resultsdir / "metrics").groupby(["benchmark", "configuration"])
 metrics = raw.mean()
-cis = raw.std().apply(ci, pexecs=pexecs)
+cis = raw.std().apply(ci, pexecs=10)
 mk_table(outdir / "metrics.tex", metrics, cis, columns=METRICS)
