@@ -1,11 +1,12 @@
-/alloy/
-/bdwgc/
-bin/
-build/
+alloy/
+bdwgc/
+heaptrack/
 plots/
 results/
 venv/
 src/
+bin/
+build/
 SOM/
 
 *.log
