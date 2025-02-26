@@ -43,14 +43,19 @@ SUITES = {
 }
 
 CFGS = {
+    "gcvs-gc": "Alloy",
+    "gcvs-rc": "RefCount (non-atomic)",
     "gc": "Alloy",
     "rc": "RefCount (non-atomic)",
-    "bopt-perf": "Barriers Opt",
-    "bnaive-perf": "Barriers Naive",
-    "bnone-perf": "Barriers None",
-    "bopt-mem": "Barriers Opt",
-    "bnaive-mem": "Barriers Naive",
-    "bnone-mem": "Barriers None",
+    "premopt-opt": "Barriers Opt",
+    "premopt-naive": "Barriers Naive",
+    "premopt-none": "Barriers None",
+    "premopt-opt": "Barriers Opt",
+    "elision-naive": "Elision Naive",
+    "elision-opt": "Elision Opt",
+    "naive": "Naive",
+    "none": "None",
+    "opt": "Opt",
 }
 
 METRICS = {
@@ -179,7 +184,7 @@ def plot_bar(title, filename, data, width, unit):
 
 def plot_mem_time_series(data, outdir):
     for benchmark, cfgs in data.groupby("benchmark"):
-        fig, ax = plt.subplots(figsize=(4, 4))
+        fig, ax = plt.subplots(figsize=(8, 4))
         ax.set_title(f"{benchmark}")
         ax.set_xlabel("Time")
         ax.set_ylabel("Memory Usage")
@@ -195,14 +200,14 @@ def plot_mem_time_series(data, outdir):
             ax.plot(snapshot["time"], snapshot["mem_heap_B"], label=f"{cfg}")
 
         ax.legend()
-        ax.grid(linewidth=0.25)
+        ax.grid(linewidth=0.1)
         plt.tight_layout()
         plt.savefig(
             outdir / f"{benchmark.lower()}.svg", format="svg", bbox_inches="tight"
         )
         plt.close(fig)
         print(
-            f"==> Saved time-series memory results to {outdir / f"{benchmark.lower()}"}"
+            f"==> Saved time-series memory results to {outdir / f"{benchmark.lower()}.svg"}"
         )
 
 
@@ -226,8 +231,8 @@ def parse_metrics(mdir):
     for f in csvs:
         df = pd.read_csv(f)
         base = os.path.splitext(os.path.basename(f))[0].split("-")
-        df["configuration"] = base[0]
-        df["benchmark"] = base[1]
+        df["configuration"] = base[1]
+        df["benchmark"] = base[2]
         df = df.drop(
             [
                 "elision enabled",
@@ -256,6 +261,8 @@ def parse_heaptrack(dir):
     data = []
     for f in files:
         base = os.path.splitext(os.path.basename(f))[0].split(".")
+        if base[0] != "1":
+            continue
         with open(f, "r") as f:
             for line in f:
                 if line.startswith("snapshot="):
@@ -266,25 +273,14 @@ def parse_heaptrack(dir):
                     mem_heap = int(line.split("=")[1])
                     data.append(
                         {
-                            "configuration": base[0],
-                            "benchmark": base[1],
+                            "configuration": base[1],
+                            "benchmark": base[2],
                             "snapshot": snapshot,
                             "time": time,
                             "mem_heap_B": mem_heap,
                         }
                     )
     return pd.DataFrame(data)
-
-
-print(f"==> processing results for {sys.argv[1:]}")
-
-infile = sys.argv[1]
-resultsdir = Path(infile).parent
-suite = Path(sys.argv[2]).parts[-2]
-experiment = Path(sys.argv[2]).parts[-3]
-datapoint = Path(sys.argv[2]).stem
-outdir = Path(sys.argv[2]).parent
-outfile = sys.argv[2]
 
 
 def parse_perfdata(csv):
@@ -307,48 +303,70 @@ def aggregate(grouped, col, method):
     return (df["value"], df["ci"])
 
 
-pdata = parse_perfdata(infile)
+def process_perf(resultsdir, outdir):
+    pdata = parse_perfdata(resultsdir / "perf.csv")
 
-perf = aggregate(pdata, "wallclock", bootstrap_mean_ci)
-maxrss = aggregate(pdata, "maxrss", bootstrap_mean_ci)
+    perf = aggregate(pdata, "wallclock", bootstrap_mean_ci)
+    # maxrss = aggregate(pdata, "maxrss", bootstrap_mean_ci)
+    # print(perf)
 
-plot_bar(
-    "Wall-clock time (ms)\n(lower is better)",
-    outdir / "perf.svg",
-    perf,
-    width=8,
-    unit="ms",
-)
-plot_bar(
-    "Maximum resident set size (KiB)\n(lower is better)",
-    outdir / "max_rss.svg",
-    maxrss,
-    width=8,
-    unit="kb",
-)
+    plot_bar(
+        "Wall-clock time (ms)\n(lower is better)",
+        outdir / "perf.svg",
+        perf,
+        width=8,
+        unit="ms",
+    )
 
-mdata = parse_heaptrack(resultsdir / "heaptrack")
-plot_mem_time_series(mdata, outdir / "mem")
-mdata = mdata.groupby(["benchmark", "configuration"])
-avgmem = aggregate(mdata, "mem_heap_B", bootstrap_mean_ci)
-maxmem = aggregate(mdata, "mem_heap_B", bootstrap_max_ci)
 
-plot_bar(
-    "Average heap usage (KiB)\n(lower is better)",
-    outdir / "avg_heap.svg",
-    avgmem,
-    width=8,
-    unit="b",
-)
-plot_bar(
-    "Max heap usage (KiB)\n(lower is better)",
-    outdir / "max_heap.svg",
-    avgmem,
-    width=8,
-    unit="b",
-)
+def process_mem(resultsdir, outdir):
+    mdata = parse_heaptrack(resultsdir / "heaptrack")
+    plot_mem_time_series(mdata, outdir / "mem")
+    mdata = mdata.groupby(["benchmark", "configuration"])
+    avgmem = aggregate(mdata, "mem_heap_B", bootstrap_mean_ci)
+    maxmem = aggregate(mdata, "mem_heap_B", bootstrap_max_ci)
 
-raw = parse_metrics(resultsdir / "metrics").groupby(["benchmark", "configuration"])
-metrics = raw.mean()
-cis = raw.std().apply(ci, pexecs=10)
-mk_table(outdir / "metrics.tex", metrics, cis, columns=METRICS)
+    # print(avgmem)
+    plot_bar(
+        "Average heap usage (KiB)\n(lower is better)",
+        outdir / "avg_heap.svg",
+        avgmem,
+        width=8,
+        unit="b",
+    )
+    plot_bar(
+        "Max heap usage (KiB)\n(lower is better)",
+        outdir / "max_heap.svg",
+        avgmem,
+        width=8,
+        unit="b",
+    )
+
+
+def main():
+
+    print(f"==> processing results for {sys.argv[1:]}")
+    resultsdir = Path(sys.argv[2])
+    outdir = Path(sys.argv[1])
+
+    perf = resultsdir / "perf.csv"
+    mem = resultsdir / "mem.csv"
+
+    if not os.path.exists(perf) and not os.path.exists(mem):
+        print(f"No results for {resultsdir}. Exiting...")
+        sys.exit()
+
+    if os.path.exists(perf):
+        process_perf(resultsdir, outdir)
+
+    if os.path.exists(mem):
+        process_mem(resultsdir, outdir)
+
+
+if __name__ == "__main__":
+    main()
+
+# raw = parse_metrics(resultsdir / "metrics").groupby(["benchmark", "configuration"])
+# metrics = raw.mean()
+# cis = raw.std().apply(ci, pexecs=10)
+# mk_table(outdir / "metrics.tex", metrics, cis, columns=METRICS)
