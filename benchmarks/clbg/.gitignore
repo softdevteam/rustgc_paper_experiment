@@ -1,6 +1,5 @@
 bin/
 results/
-regex-gc/
-regex-rc/
+regex/
 results/
 redux_input.txt
