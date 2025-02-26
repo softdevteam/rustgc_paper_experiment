@@ -179,17 +179,23 @@ def plot_bar(title, filename, data, width, unit):
 
 def plot_mem_time_series(data, outdir):
     for benchmark, cfgs in data.groupby("benchmark"):
-        fig, ax = plt.subplots(figsize=(10, 6))
+        fig, ax = plt.subplots(figsize=(4, 4))
         ax.set_title(f"{benchmark}")
         ax.set_xlabel("Time")
         ax.set_ylabel("Memory Usage")
         ax.yaxis.set_major_formatter(FuncFormatter(human_readable_bytes))
+        ax.spines["right"].set_visible(False)
+        ax.spines["top"].set_visible(False)
+        ax.xaxis.set_ticks_position("bottom")
+        ax.yaxis.set_ticks_position("left")
+        ax.xaxis.set_tick_params(which="minor", size=0)
+        ax.yaxis.set_tick_params(which="minor", width=0)
 
         for cfg, snapshot in cfgs.groupby("configuration"):
             ax.plot(snapshot["time"], snapshot["mem_heap_B"], label=f"{cfg}")
 
         ax.legend()
-        ax.grid(True, linestyle="--", alpha=0.7)
+        ax.grid(linewidth=0.25)
         plt.tight_layout()
         plt.savefig(
             outdir / f"{benchmark.lower()}.svg", format="svg", bbox_inches="tight"
