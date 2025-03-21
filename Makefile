@@ -95,7 +95,6 @@ build: build-alloy
 	$(foreach b, $(BENCHMARK_DIRS), cd $(b)/ && make build;)
 
 bench: $(RESULTS)
-	# $(foreach b, $(BENCHMARK_DIRS), cd $(b)/ && make bench;)
 
 $(RESULTS_DIR)/%/data.csv:
 	@echo $*
@@ -114,25 +113,17 @@ $(VENV)/bin/activate: requirements.txt
 	$(PYTHON) -m venv $(VENV)
 	$(PIP) install -r requirements.txt
 
-clean: clean-confirm clean-alloy clean-builds clean-results clean-plots
+clean: clean-confirm clean-alloy clean-builds
 	rm -rf $(ALLOY_SRC) $(HEAPTRACK_SRC) $(LIBGC_SRC)
 	@echo "Clean"
 
 clean-alloy:
 	rm -rf $(ALLOY_TARGETS)
 
-clean-benchmarks:
-	$(foreach b, $(BENCHMARK_DIRS), cd $(b)/ && make clean-benchmarks;)
-
 clean-builds:
 	$(foreach b, $(BENCHMARK_DIRS), cd $(b)/ && make clean-builds;)
 
-clean-results:
-	rm -rf $(RESULTS)
-
-clean-plots:
-	$(foreach b, $(BENCHMARK_DIRS), cd $(b)/ && make clean-plots;)
-
 clean-confirm:
 	@echo $@
+	rm -rf $(RESULTS_DIR) $(PLOTS_DIR)
 	@( read -p "Are you sure? [y/N]: " sure && case "$$sure" in [yY]) true;; *) false;; esac )
