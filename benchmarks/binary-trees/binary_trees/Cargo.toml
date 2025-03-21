@@ -1,0 +1,8 @@
+[workspace]
+members = [
+    "arc",
+    "gc",
+    "rust-gc",
+    "typed_arena",
+]
+
