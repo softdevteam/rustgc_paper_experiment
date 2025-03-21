@@ -1,14 +1,6 @@
 *.bin
 *.html
-/arc/
-/gc/
-/barriers_none/
-/barriers_opt/
-/barriers_naive/
-/finalise_elide/
-/finalise_naive/
 wrk/
 hyper/
 sws/
 results/
-results.bk/
