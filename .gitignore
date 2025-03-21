@@ -7,6 +7,5 @@ venv/
 src/
 bin/
 build/
-SOM/
 
 *.log
