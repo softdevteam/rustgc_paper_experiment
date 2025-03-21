@@ -7,8 +7,8 @@ VENV = $(PWD)/venv
 PIP = $(VENV)/bin/pip
 PYTHON_EXEC = $(VENV)/bin/python
 
-ALLOY_REPO = https://github.com/softdevteam/alloy
-ALLOY_VERSION = master
+ALLOY_REPO = https://github.com/jacob-hughes/alloy
+ALLOY_VERSION = fix_stats
 ALLOY_BOOTSTRAP_STAGE = 1
 ALLOY_SRC = $(PWD)/alloy
 
@@ -16,8 +16,8 @@ CFGS = $(subst .,/,$(notdir $(patsubst %.config.toml,%,$(wildcard $(PWD)/configs
 export ALLOY_DEFAULTS := $(addprefix gcvs/, perf mem)
 export ALLOY_CFGS := $(filter-out $(ALLOY_DEFAULTS), $(CFGS))
 
-LIBGC_REPO = https://github.com/softdevteam/bdwgc
-LIBGC_VERSION = master
+LIBGC_REPO = https://github.com/jacob-hughes/bdwgc
+LIBGC_VERSION = gc_reclaimed
 LIBGC_SRC = $(PWD)/bdwgc
 
 HEAPTRACK_REPO = https://github.com/kde/heaptrack
