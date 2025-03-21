@@ -1,10 +1,2 @@
-/alacritty/
-/benchmarks/
-/arc/
-/gc/
-/barriers_none/
-/barriers_opt/
-/barriers_naive/
-/finalise_elide/
-/finalise_naive/
-/results/
+alacritty/
+vtebench/
