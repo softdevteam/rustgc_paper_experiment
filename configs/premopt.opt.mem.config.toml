@@ -4,6 +4,7 @@ finalizer-elision = true
 finalizer-safety-analysis = false
 premature-finalizer-prevention = true
 premature-finalizer-prevention-optimize = true
+bdwgc-link-shared = true
 
 [rust]
 codegen-units = 0
@@ -14,7 +15,7 @@ debug = false
 install-stage = 2
 
 [llvm]
-download-ci-llvm = false
+download-ci-llvm = true
 
 [install]
 sysconfdir = "etc"
