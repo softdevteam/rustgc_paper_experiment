@@ -104,7 +104,7 @@ $(RESULTS_DIR)/%/data.csv:
 		--iterations 1 \
 		-df $@ $(PWD)/rebench.conf $(subst /,-,$*)
 
-plot:
+plot: venv
 	$(REBENCH_PROCESSOR) $(PLOTS_DIR) $(RESULTS_DIR)
 
 venv: $(VENV)/bin/activate
