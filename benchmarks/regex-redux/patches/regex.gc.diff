@@ -26,7 +26,7 @@ index 8cfdecb..f51bd6d 100644
  use regex_syntax::{
      ast,
 diff --git a/regex-automata/src/meta/strategy.rs b/regex-automata/src/meta/strategy.rs
-index 04f2ba3..0d7a00d 100644
+index 04f2ba3..9d2d79f 100644
 --- a/regex-automata/src/meta/strategy.rs
 +++ b/regex-automata/src/meta/strategy.rs
 @@ -3,7 +3,8 @@ use core::{
@@ -43,20 +43,11 @@ index 04f2ba3..0d7a00d 100644
      group_info: GroupInfo,
  }
  
-+unsafe impl<P> FinalizerSafe for Pre<P> {}
++unsafe impl<P> std::marker::FinalizerSafe for Pre<P> {}
 +
  impl<P: PrefilterI> Pre<P> {
      fn new(pre: P) -> Arc<dyn Strategy> {
          // The only thing we support when we use prefilters directly as a
-@@ -202,6 +205,8 @@ impl<P: PrefilterI> Pre<P> {
-     }
- }
- 
-+impl<P> std::gc::ReferenceFree for Pre<P> {}
-+
- // This is a little weird, but we don't actually care about the type parameter
- // here because we're selecting which underlying prefilter to use. So we just
- // define it on an arbitrary type.
 diff --git a/regex-automata/src/nfa/thompson/builder.rs b/regex-automata/src/nfa/thompson/builder.rs
 index 6b69e87..0607273 100644
 --- a/regex-automata/src/nfa/thompson/builder.rs
@@ -132,7 +123,7 @@ index 93a0a8a..f9677e2 100644
  #[derive(Clone, Debug, Default)]
  pub struct GroupInfo(Arc<GroupInfoInner>);
  
-+unsafe impl FinalizerSafe for GroupInfo {}
++unsafe impl std::marker::FinalizerSafe for GroupInfo {}
 +
  impl GroupInfo {
      /// Creates a new group info from a sequence of patterns, where each
@@ -151,7 +142,7 @@ index 93a0a8a..f9677e2 100644
      kind: GroupInfoErrorKind,
  }
  
-+unsafe impl FinalizerSafe  for GroupInfoError {}
++unsafe impl std::marker::FinalizerSafe  for GroupInfoError {}
 +///
  /// The kind of error that occurs when building a `GroupInfo` fails.
  ///
@@ -184,32 +175,6 @@ index d90d4ec..2848fd9 100644
  
          let pool: Arc<Pool<RefCell<Vec<char>>>> =
              Arc::new(Pool::new(|| RefCell::new(vec!['a'])));
-diff --git a/regex-automata/src/util/prefilter/aho_corasick.rs b/regex-automata/src/util/prefilter/aho_corasick.rs
-index 50cce82..bee594a 100644
---- a/regex-automata/src/util/prefilter/aho_corasick.rs
-+++ b/regex-automata/src/util/prefilter/aho_corasick.rs
-@@ -10,6 +10,8 @@ pub(crate) struct AhoCorasick {
-     #[cfg(feature = "perf-literal-multisubstring")]
-     ac: aho_corasick::AhoCorasick,
- }
-+unsafe impl FinalizerSafe for AhoCorasick {}
-+impl std::gc::ReferenceFree for AhoCorasick {}
- 
- impl AhoCorasick {
-     pub(crate) fn new<B: AsRef<[u8]>>(
-diff --git a/regex-automata/src/util/prefilter/memchr.rs b/regex-automata/src/util/prefilter/memchr.rs
-index 3d44b83..b0deed0 100644
---- a/regex-automata/src/util/prefilter/memchr.rs
-+++ b/regex-automata/src/util/prefilter/memchr.rs
-@@ -6,6 +6,8 @@ use crate::util::{
- #[derive(Clone, Debug)]
- pub(crate) struct Memchr(u8);
- 
-+impl std::gc::ReferenceFree for Memchr {}
-+
- impl Memchr {
-     pub(crate) fn new<B: AsRef<[u8]>>(
-         _kind: MatchKind,
 diff --git a/regex-automata/src/util/prefilter/mod.rs b/regex-automata/src/util/prefilter/mod.rs
 index d20442a..b6c9bd8 100644
 --- a/regex-automata/src/util/prefilter/mod.rs
@@ -228,7 +193,7 @@ index d20442a..b6c9bd8 100644
      max_needle_len: usize,
  }
  
-+unsafe impl FinalizerSafe for Prefilter {}
++unsafe impl std::marker::FinalizerSafe for Prefilter {}
 +
  impl Prefilter {
      /// Create a new prefilter from a sequence of needles and a corresponding
@@ -237,24 +202,11 @@ index d20442a..b6c9bd8 100644
      AhoCorasick(AhoCorasick),
  }
  
-+unsafe impl FinalizerSafe for Choice {}
++unsafe impl std::marker::FinalizerSafe for Choice {}
 +
  impl Choice {
      /// Select what is believed to be the best prefilter algorithm for the
      /// match semantics and sequence of needles given.
-diff --git a/regex-automata/src/util/prefilter/teddy.rs b/regex-automata/src/util/prefilter/teddy.rs
-index fc79f2b..2865b79 100644
---- a/regex-automata/src/util/prefilter/teddy.rs
-+++ b/regex-automata/src/util/prefilter/teddy.rs
-@@ -3,6 +3,8 @@ use crate::util::{
-     search::{MatchKind, Span},
- };
- 
-+impl std::gc::ReferenceFree for Teddy {}
-+unsafe impl FinalizerSafe for Teddy {}
- #[derive(Clone, Debug)]
- pub(crate) struct Teddy {
-     #[cfg(not(feature = "perf-literal-multisubstring"))]
 diff --git a/regex-lite/src/nfa.rs b/regex-lite/src/nfa.rs
 index 8f37a54..444d17b 100644
 --- a/regex-lite/src/nfa.rs
