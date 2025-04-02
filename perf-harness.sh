@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/env bash
 
 CFG=$1
 INVOCATION=$2
@@ -7,11 +7,12 @@ BIN=$4
 BENCHMARK=$5
 shift 5
 
-OUTDIR="results/$EXPERIMENT/$BENCHMARK_SUITE/metrics/runtime"
+export OUTDIR="$(pwd)/results/$EXPERIMENT/$BENCHMARK_SUITE/perf"
+export LOGFILE="$BIN.$INVOCATION.$EXPERIMENT-$CFG.$BENCHMARK.csv"
+export ALLOY_LOG="$OUTDIR/metrics/runtime/$LOGFILE"
 
 if [ "$EXPERIMENT" == "gcvs" ] && [ "$CFG" != "gc" ]; then
     export GC_DONT_GC=true
 fi
 
-LOGFILE="$BIN.$INVOCATION.$EXPERIMENT-$CFG.$BENCHMARK.csv"
-ALLOY_LOG="$OUTDIR/$LOGFILE" "benchmarks/$BENCHMARK_SUITE/bin/$EXPERIMENT/$CFG/perf/bin/$BIN" "$@"
+"benchmarks/$BENCHMARK_SUITE/bin/$EXPERIMENT/$CFG/perf/bin/$BIN" "$@"

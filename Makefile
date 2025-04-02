@@ -1,4 +1,7 @@
 export PEXECS ?= 10
+export BENCHMARKS ?= som grmtools alacritty fd regex-redux binary-trees ripgrep
+export EXPERIMENTS ?= gcvs premopt elision
+export METRICS ?= perf mem
 
 PWD != pwd
 
@@ -25,18 +28,15 @@ HEAPTRACK_VERSION = master
 HEAPTRACK_SRC = $(PWD)/heaptrack
 HEAPTRACK = $(HEAPTRACK_SRC)/bin
 
-# BENCHMARKS = som grmtools
-BENCHMARKS = som grmtools alacritty fd regex-redux binary-trees
-# BENCHMARKS = regex-redux
-# BENCHMARKS = som grmtools binary-trees grmtools
 BENCHMARK_DIRS := $(addprefix $(PWD)/benchmarks/, $(BENCHMARKS))
 
 export RESULTS_DIR = $(PWD)/results
 
-export EXPERIMENTS = gcvs premopt elision
 RESULTS := $(foreach e,$(EXPERIMENTS),$(foreach b,$(BENCHMARKS),$(e)/$(b)))
-RESULTS := $(addprefix $(RESULTS_DIR)/, $(addsuffix /data.csv, $(RESULTS)))
+PERF_RESULTS := $(foreach r,$(RESULTS),$(foreach m,$(METRICS),$(r)/$(m).csv))
+PERF_RESULTS := $(addprefix $(RESULTS_DIR)/, $(PERF_RESULTS))
 
+RESULTS := $(addprefix $(RESULTS_DIR)/, $(addsuffix /data.csv, $(RESULTS)))
 export ALLOY_PATH = $(ALLOY_SRC)/bin
 export LIBGC_PATH = $(LIBGC_SRC)/lib
 export REBENCH_EXEC = $(VENV)/bin/rebench
@@ -45,7 +45,10 @@ export PLOTS_DIR = $(PWD)/plots
 export REBENCH_PROCESSOR = $(PYTHON_EXEC) $(PWD)/process.py
 ALLOY_TARGETS := $(addprefix $(ALLOY_PATH)/, $(ALLOY_DEFAULTS) $(ALLOY_CFGS))
 
-all: build
+XVFB_DISPLAY := :99
+XVFB_CMD := Xvfb -ac $(XVFB_DISPLAY) -screen 0 1600x1200x16 -nolisten tcp > /dev/null 2>&1
+
+all: build bench
 
 .PHONY: venv
 .PHONY: build build-alloy
@@ -90,19 +93,35 @@ $(HEAPTRACK): $(HEAPTRACK_SRC)
 		-DCMAKE_INSTALL_PREFIX=$(HEAPTRACK_SRC) ../ && \
 		make -j$(numproc) install
 
+start-xvfb:
+	@echo "Starting Xvfb on display $(XVFB_DISPLAY)..."
+	$(XVFB_CMD) &
+	@sleep 2
+	@echo "Xvfb started."
 
 build: build-alloy
 	$(foreach b, $(BENCHMARK_DIRS), cd $(b)/ && make build;)
 
-bench: $(RESULTS)
+bench: start-xvfb $(PERF_RESULTS)
+	stop-xvfb
 
-$(RESULTS_DIR)/%/data.csv:
-	@echo $*
-	mkdir -p $(dir $@)metrics/{runtime,heaptrack,rss}
+stop-xvfb:
+	@echo "Stopping Xvfb on display $(XVFB_DISPLAY)..."
+	@if [ -f /tmp/.X$(subst :,,$(XVFB_DISPLAY))-lock ]; then \
+		echo "Killing Xvfb process..."; \
+		kill $$(ps aux | grep '[X]vfb $(XVFB_DISPLAY)' | awk '{print $$2}') || true; \
+		rm -f /tmp/.X$(subst :,,$(XVFB_DISPLAY))-lock; \
+	else \
+		echo "No Xvfb lock file found. Skipping."; \
+	fi
+
+$(RESULTS_DIR)/%.csv:
+	mkdir -p $(basename $@)/metrics/runtime
+	mkdir -p $(dir $@)heaptrack
 	- $(REBENCH_EXEC) -R -D \
 		--invocations $(PEXECS) \
 		--iterations 1 \
-		-df $@ $(PWD)/rebench.conf $(subst /,-,$*)
+		-df $@ $(PWD)/rebench_$(notdir $*).conf $(subst /,-,$(patsubst %/,%,$(dir $*)))
 
 plot: venv
 	$(REBENCH_PROCESSOR) $(PLOTS_DIR) $(RESULTS_DIR)

@@ -23,7 +23,7 @@ endef
 
 define build_gcvs
 	mkdir -p $(BIN)/gcvs/$1
-	ALLOY_RUSTC_LOG="$(BIN)/gcvs/$1/metrics.csv" RUSTFLAGS="-L $(LIBGC_PATH)" RUSTC="$(ALLOY_PATH)/gcvs/$(notdir $1)/bin/rustc" cargo install --path $2/$3 \
+	ALLOY_RUSTC_LOG="$(BIN)/gcvs/$1/$(notdir $2).metrics.csv" RUSTFLAGS="-L $(LIBGC_PATH)" RUSTC="$(ALLOY_PATH)/gcvs/$(notdir $1)/bin/rustc" cargo install --path $2/$3 \
 		--target-dir $(BUILD)/gcvs/$1/$(notdir $2) \
 		--root $(BIN)/gcvs/$1
 endef
