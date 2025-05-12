@@ -44,9 +44,9 @@ can do so as follows.
 - 4GiB RAM minimum (8GiB recommended)
 - At least 60GiB disk-space for build artefacts
 - 1GiB disk-space for each benchmark iteration. (e.g. to reproduce our
-  experiment using 30 iterations, you will need 30GiB of disk-space.) [1^]
+  experiment using 30 iterations, you will need 30GiB of disk-space.) [^1]
 
-[1^]: Around 99% of the disk usage for benchmarking results comes from our
+[^1]: Around 99% of the disk usage for benchmarking results comes from our
 detailed heap profiling traces recorded from the memory experiments. If you
 only want to run performance benchmarks, you can avoid this while also
 dramatically speeding up the time needed to run the benchmarks.
