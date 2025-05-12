@@ -1,4 +1,4 @@
-export PEXECS ?= 10
+export PEXECS ?= 30
 export BENCHMARKS ?= som grmtools alacritty fd regex-redux binary-trees ripgrep
 export EXPERIMENTS ?= gcvs premopt elision
 export METRICS ?= perf mem
