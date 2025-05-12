@@ -126,6 +126,12 @@ $(RESULTS_DIR)/%.csv:
 plot: venv
 	$(REBENCH_PROCESSOR) $(PLOTS_DIR) $(RESULTS_DIR)
 
+archive-results:
+	mkdir -p archive
+	rsync -av --exclude='*.zst' results archive/results
+	rsync -av plots archive/plots
+	tar -czvf alloy_experiment_data.tar.gz archive
+
 venv: $(VENV)/bin/activate
 
 $(VENV)/bin/activate: requirements.txt
