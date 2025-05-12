@@ -19,8 +19,10 @@ $(BIN)/gcvs/%:
 	$(call patch_repo,$(SOMRS_SRC),$(patsubst %/,%,$(dir $*)))
 	$(call build_gcvs,$*,$(SOMRS_SRC),som-interpreter-ast)
 	$(call build_gcvs,$*,$(SOMRS_SRC),som-interpreter-bc)
+	$(call build_gcvs,$*,$(YKSOM_SRC),)
 	ln -s $(PWD)/som-rs-ast-harness.sh $@/bin/som-rs-ast-harness
 	ln -s $(PWD)/som-rs-bc-harness.sh $@/bin/som-rs-bc-harness
+	ln -s $(PWD)/yksom-harness.sh $@/bin/yksom-harness
 
 $(BIN)/%:
 	$(call patch_repo,$(SOMRS_SRC),alloy)
