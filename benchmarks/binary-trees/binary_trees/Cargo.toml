@@ -4,5 +4,6 @@ members = [
     "gc",
     "rust-gc",
     "typed_arena",
+    "original",
 ]
 

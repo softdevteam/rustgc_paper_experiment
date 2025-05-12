@@ -1,4 +1,4 @@
-GCVS_CFGS := gcvs/gc gcvs/arc gcvs/rust-gc gcvs/typed_arena
+GCVS_CFGS := gcvs/gc gcvs/arc gcvs/rust-gc gcvs/typed_arena gcvs/original
 include ../../common.mk
 
 BT_SRC = $(PWD)/binary_trees

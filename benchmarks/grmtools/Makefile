@@ -1,4 +1,4 @@
-GCVS_CFGS := gcvs/gc gcvs/rc
+GCVS_CFGS := gcvs/gc gcvs/rc gcvs/original
 include ../../common.mk
 
 GRMTOOLS_SRC = $(PWD)/grmtools

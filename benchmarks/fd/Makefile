@@ -1,4 +1,4 @@
-GCVS_CFGS := gcvs/gc gcvs/arc
+GCVS_CFGS := gcvs/gc gcvs/arc gcvs/original
 include ../../common.mk
 
 FD_SRC = $(PWD)/fd

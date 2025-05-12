@@ -1,4 +1,4 @@
-GCVS_CFGS := gcvs/gc gcvs/arc
+GCVS_CFGS := gcvs/gc gcvs/arc gcvs/original
 include ../../common.mk
 
 ALACRITTY_REPO = https://github.com/alacritty/alacritty.git

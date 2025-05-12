@@ -1,4 +1,4 @@
-GCVS_CFGS := gcvs/gc gcvs/arc
+GCVS_CFGS := gcvs/gc gcvs/arc gcvs/original
 include ../../common.mk
 
 REGEX_VERSION = bcbe40342628b15ab2543d386c745f7f0811b791

@@ -1,4 +1,4 @@
-GCVS_CFGS := gcvs/gc gcvs/rc
+GCVS_CFGS := gcvs/gc gcvs/rc gcvs/original
 include ../../common.mk
 
 SOMRS_REPO = https://github.com/Hirevo/som-rs
