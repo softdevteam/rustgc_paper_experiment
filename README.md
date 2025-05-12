@@ -15,10 +15,11 @@ the repository and running a single command:
 This will ensure all dependencies are installed, build the different variants
 of Alloy needed for the experiments, and then run them. It will output the
 results in the following two top-level directories: 
-    - `results`: the raw data from the experiments. Includes perf data, memory
-      traces, and Alloy metrics for each iteration.
-    - `plots`: the various plots and tables as seen in the paper. These are
-      `.ltx` and `.pdf` files.
+
+- `results` the raw data from the experiments. Includes perf data, memory
+  traces, and Alloy metrics for each iteration.
+- `plots` the various plots and tables as seen in the paper. These are
+  `.ltx` and `.pdf` files.
 
 You can examine the data in `plots` individually, or you can rebuild our paper
 with the data from your run by first downloading the paper source:
