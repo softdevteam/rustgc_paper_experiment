@@ -1,4 +1,6 @@
-FROM debian:latest
+FROM debian:latest as base
+
+FROM base as build_alloy
 WORKDIR /app
 RUN --mount=target=/var/lib/apt/lists,type=cache,sharing=locked \
     --mount=target=/var/cache/apt,type=cache,sharing=locked \
@@ -7,21 +9,22 @@ RUN --mount=target=/var/lib/apt/lists,type=cache,sharing=locked \
   apt-get -y install make build-essential curl git cmake python3 \
     libtinfo-dev libzip-dev ninja-build gdb pipx rsync \
     libdwarf-dev libunwind-dev libboost-dev libboost-iostreams-dev \
-    libboost-program-options-dev zlib1g-dev zstd elfutils \
-    pkg-config libssl-dev zlib1g-dev liblzma-dev libffi-dev libedit-dev \
-    llvm-dev clang procps autotools-dev gperf bison flex xvfb
+    libboost-all-dev libboost-program-options-dev libboost-regex-dev zlib1g-dev zstd libelf-dev elfutils \
+    libdw-dev pkg-config libssl-dev zlib1g-dev libzstd-dev liblzma-dev \
+    libffi-dev libedit-dev llvm-dev clang procps autotools-dev \
+    gperf bison flex xvfb
+COPY . builder
+RUN mkdir -p /app/alloy/bin
+RUN --mount=type=cache,target=/app/builder/alloy/ \
+    --mount=type=cache,target=/app/builder/heaptrack/ \
+    --mount=type=cache,target=/app/builder/bdwgc/ \
+    cd builder && make build-alloy && \
+    cp -r alloy/bin /app/alloy/bin && \
+    cp -r heaptrack /app/ && \
+    cp -r bdwgc /app/
 
-
-COPY . .
-RUN ls
-
-# Cache build artifacts
-RUN --mount=target=/var/cache/build,type=cache,sharing=locked \
-    make build && \
-    cp -r alloy /var/cache/build/alloy && \
-    cp -r libgc /var/cache/build/libgc && \
-    cp -r heaptrack /var/cache/build/heaptrack && \
-    cp -r benchmarks /var/cache/build/benchmarks
-
-CMD ["make", "bench"]
+FROM base as build_benchmarks
+WORKDIR /app
+COPY --from=build_alloy /app .
+RUN make build-benchmarks
 

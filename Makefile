@@ -33,10 +33,9 @@ BENCHMARK_DIRS := $(addprefix $(PWD)/benchmarks/, $(BENCHMARKS))
 export RESULTS_DIR = $(PWD)/results
 
 RESULTS := $(foreach e,$(EXPERIMENTS),$(foreach b,$(BENCHMARKS),$(e)/$(b)))
-PERF_RESULTS := $(foreach r,$(RESULTS),$(foreach m,$(METRICS),$(r)/$(m).csv))
-PERF_RESULTS := $(addprefix $(RESULTS_DIR)/, $(PERF_RESULTS))
+RESULTS := $(foreach r,$(RESULTS),$(foreach m,$(METRICS),$(r)/$(m).csv))
+RESULTS := $(addprefix $(RESULTS_DIR)/, $(RESULTS))
 
-RESULTS := $(addprefix $(RESULTS_DIR)/, $(addsuffix /data.csv, $(RESULTS)))
 export ALLOY_PATH = $(ALLOY_SRC)/bin
 export LIBGC_PATH = $(LIBGC_SRC)/lib
 export REBENCH_EXEC = $(VENV)/bin/rebench
@@ -55,7 +54,7 @@ all: build bench
 .PHONY: bench plot
 .PHONY: clean clean-alloy clean-results clean-plots clean-confirm
 
-build-alloy: $(ALLOY_SRC) $(LIBGC_PATH) $(HEAPTRACK) $(ALLOY_TARGETS)
+build-alloy: $(ALLOY_SRC)/.git $(LIBGC_PATH) $(HEAPTRACK) $(ALLOY_TARGETS)
 
 $(ALLOY_PATH)/%:
 	@echo $@
@@ -67,28 +66,28 @@ $(ALLOY_PATH)/%:
 		--set install.prefix=$(ALLOY_SRC)/bin/$* \
 		--set install.sysconfdir=etc
 
-$(ALLOY_SRC):
-	git clone $(ALLOY_REPO) $@
-	cd $@ && git checkout $(ALLOY_VERSION)
+$(ALLOY_SRC)/.git:
+	git clone $(ALLOY_REPO) $(ALLOY_SRC)
+	cd $(ALLOY_SRC) && git checkout $(ALLOY_VERSION)
 
-$(LIBGC_SRC):
-	git clone $(LIBGC_REPO) $@
-	cd $@ && git checkout $(LIBGC_VERSION)
+$(LIBGC_SRC)/.git:
+	git clone $(LIBGC_REPO) $(LIBGC_SRC)
+	cd $(LIBGC_SRC) && git checkout $(LIBGC_VERSION)
 
-$(LIBGC_PATH): $(LIBGC_SRC)
-	mkdir -p $</build
-	cd $</build && cmake -DCMAKE_BUILD_TYPE=Debug \
+$(LIBGC_PATH): $(LIBGC_SRC)/.git
+	mkdir -p $(LIBGC_SRC)/build
+	cd $(LIBGC_SRC)/build && cmake -DCMAKE_BUILD_TYPE=Debug \
 		-DCMAKE_INSTALL_PREFIX="$(LIBGC_SRC)" \
 		-DCMAKE_C_FLAGS="-DGC_ALWAYS_MULTITHREADED -DVALGRIND_TRACKING" ../ && \
 		make -j$(numproc) install
 
-$(HEAPTRACK_SRC):
-	git clone $(HEAPTRACK_REPO) $@
-	cd $@ && git checkout $(HEAPTRACK_VERSION)
+$(HEAPTRACK_SRC)/.git:
+	git clone $(HEAPTRACK_REPO) $(HEAPTRACK_SRC)
+	cd $(HEAPTRACK_SRC) && git checkout $(HEAPTRACK_VERSION)
 
-$(HEAPTRACK): $(HEAPTRACK_SRC)
-	mkdir -p $</build
-	cd $</build && \
+$(HEAPTRACK): $(HEAPTRACK_SRC)/.git
+	mkdir -p $(HEAPTRACK_SRC)/build
+	cd $(HEAPTRACK_SRC)/build && \
 		cmake -DCMAKE_BUILD_TYPE=Release \
 		-DCMAKE_INSTALL_PREFIX=$(HEAPTRACK_SRC) ../ && \
 		make -j$(numproc) install
@@ -99,10 +98,13 @@ start-xvfb:
 	@sleep 2
 	@echo "Xvfb started."
 
-build: build-alloy
+
+build: build-alloy build-benchmarks
+
+build-benchmarks:
 	$(foreach b, $(BENCHMARK_DIRS), cd $(b)/ && make build;)
 
-bench: start-xvfb $(PERF_RESULTS)
+bench: start-xvfb $(RESULTS)
 	stop-xvfb
 
 stop-xvfb:
@@ -128,9 +130,7 @@ plot: venv
 
 archive-results:
 	mkdir -p archive
-	rsync -av --exclude='*.zst' results archive/results
-	rsync -av plots archive/plots
-	tar -czvf alloy_experiment_data.tar.gz archive
+	tar --exclude='*/elision' -czvf archive/alloy_experiment_data.tar.gz results
 
 venv: $(VENV)/bin/activate
 

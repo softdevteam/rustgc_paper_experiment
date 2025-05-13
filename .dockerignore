@@ -8,4 +8,6 @@ results/
 **/jenkins/
 **/spring/
 **/hadoop/
-
+bdwgc/
+plots/
+build/
