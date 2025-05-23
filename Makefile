@@ -10,123 +10,49 @@ VENV = $(PWD)/venv
 PIP = $(VENV)/bin/pip
 PYTHON_EXEC = $(VENV)/bin/python
 
-ALLOY_REPO = https://github.com/softdevteam/alloy
-ALLOY_VERSION = 35771775fa71effe7de724ef6ac09c791d91f4f6
-ALLOY_BOOTSTRAP_STAGE = 1
-ALLOY_SRC = $(PWD)/alloy
-
-CFGS = $(subst .,/,$(notdir $(patsubst %.config.toml,%,$(wildcard $(PWD)/configs/*))))
-export ALLOY_DEFAULTS := $(addprefix gcvs/, perf mem)
-export ALLOY_CFGS := $(filter-out $(ALLOY_DEFAULTS), $(CFGS))
-
-LIBGC_REPO = https://github.com/softdevteam/bdwgc
-LIBGC_VERSION = e49b178f892d8e4b65785029c4fba3480850ce62
-LIBGC_SRC = $(PWD)/bdwgc
-
-HEAPTRACK_REPO = https://github.com/kde/heaptrack
-HEAPTRACK_VERSION = master
-HEAPTRACK_SRC = $(PWD)/heaptrack
-HEAPTRACK = $(HEAPTRACK_SRC)/bin
-
-BENCHMARK_DIRS := $(addprefix $(PWD)/benchmarks/, $(BENCHMARKS))
-
-export RESULTS_DIR = $(PWD)/results
-
-RESULTS := $(foreach e,$(EXPERIMENTS),$(foreach b,$(BENCHMARKS),$(e)/$(b)))
-RESULTS := $(foreach r,$(RESULTS),$(foreach m,$(METRICS),$(r)/$(m).csv))
-RESULTS := $(addprefix $(RESULTS_DIR)/, $(RESULTS))
-
-export ALLOY_PATH = $(ALLOY_SRC)/bin
-export LIBGC_PATH = $(LIBGC_SRC)/lib
-export REBENCH_EXEC = $(VENV)/bin/rebench
-export LD_LIBRARY_PATH = $(LIBGC_PATH)
-export PLOTS_DIR = $(PWD)/plots
-export REBENCH_PROCESSOR = $(PYTHON_EXEC) $(PWD)/process.py
-ALLOY_TARGETS := $(addprefix $(ALLOY_PATH)/, $(ALLOY_DEFAULTS) $(ALLOY_CFGS))
-
-XVFB_DISPLAY := :99
-XVFB_CMD := Xvfb -ac $(XVFB_DISPLAY) -screen 0 1600x1200x16 -nolisten tcp > /dev/null 2>&1
-
-all: build bench
-
 .PHONY: venv
-.PHONY: build build-alloy
-.PHONY: bench plot
-.PHONY: clean clean-alloy clean-results clean-plots clean-confirm
+.PHONY: build
+.PHONY: bench
+.PHONY: clean
 
-build-alloy: $(ALLOY_SRC)/.git $(LIBGC_PATH) $(HEAPTRACK) $(ALLOY_TARGETS)
+# Artefacts
+SRCS = $(PWD)/srcs
 
-$(ALLOY_PATH)/%:
-	@echo $@
-	RUSTFLAGS="-L $(LIBGC_SRC)/lib" \
-	$(ALLOY_SRC)/x install \
-		--config $(PWD)/configs/$(subst /,.,$*).config.toml \
-		--stage $(ALLOY_BOOTSTRAP_STAGE) \
-		--set build.docs=false \
-		--set install.prefix=$(ALLOY_SRC)/bin/$* \
-		--set install.sysconfdir=etc
+LINUX_SRC = $(SRCS)/artefacts/linux
+LINUX_REPO = 'https://github.com/BurntSushi/linux'
 
-$(ALLOY_SRC)/.git:
-	git clone $(ALLOY_REPO) $(ALLOY_SRC)
-	cd $(ALLOY_SRC) && git checkout $(ALLOY_VERSION)
+HADOOP_SRC = $(SRCS)/hadoop
+ECLIPSE_SRC = $(SRCS)/eclipse
+SPRING_SRC = $(SRCS)/spring
+JENKINS_SRC = $(SRCS)/jenkins
 
-$(LIBGC_SRC)/.git:
-	git clone $(LIBGC_REPO) $(LIBGC_SRC)
-	cd $(LIBGC_SRC) && git checkout $(LIBGC_VERSION)
+HADOOP_REPO = https://github.com/apache/hadoop
+ECLIPSE_REPO = https://github.com/eclipse-platform/eclipse.platform
+SPRING_REPO = https://github.com/spring-projects/spring-framework
+JENKINS_REPO = https://github.com/jenkinsci/jenkins
 
-$(LIBGC_PATH): $(LIBGC_SRC)/.git
-	mkdir -p $(LIBGC_SRC)/build
-	cd $(LIBGC_SRC)/build && cmake -DCMAKE_BUILD_TYPE=Debug \
-		-DCMAKE_INSTALL_PREFIX="$(LIBGC_SRC)" \
-		-DCMAKE_C_FLAGS="-DGC_ALWAYS_MULTITHREADED -DVALGRIND_TRACKING" ../ && \
-		make -j$(numproc) install
+$(LINUX_SRC):
+	git clone --depth 1 $(LINUX_REPO) $@
+	cd $@ && make defconfig
+	cd $@ && make -j4
 
-$(HEAPTRACK_SRC)/.git:
-	git clone $(HEAPTRACK_REPO) $(HEAPTRACK_SRC)
-	cd $(HEAPTRACK_SRC) && git checkout $(HEAPTRACK_VERSION)
+$(HADOOP_SRC):
+	git clone $(HADOOP_REPO) $@ --depth 1
 
-$(HEAPTRACK): $(HEAPTRACK_SRC)/.git
-	mkdir -p $(HEAPTRACK_SRC)/build
-	cd $(HEAPTRACK_SRC)/build && \
-		cmake -DCMAKE_BUILD_TYPE=Release \
-		-DCMAKE_INSTALL_PREFIX=$(HEAPTRACK_SRC) ../ && \
-		make -j$(numproc) install
+$(ECLIPSE_SRC):
+	git clone $(ECLIPSE_REPO) $@ --depth 1
 
-start-xvfb:
-	@echo "Starting Xvfb on display $(XVFB_DISPLAY)..."
-	$(XVFB_CMD) &
-	@sleep 2
-	@echo "Xvfb started."
+$(SPRING_SRC):
+	git clone $(SPRING_REPO) $@ --depth 1
 
+$(JENKINS_SRC):
+	git clone $(JENKINS_REPO) $@ --depth 1
 
-build: build-alloy build-benchmarks
+GRMTOOLS_SRCS = $(LINUX_SRC) $(HADOOP_REPO) $(ECLIPSE_SRC) \
+	$(SPRING_SRC) $(JENKINS_SRC)
 
-build-benchmarks:
-	$(foreach b, $(BENCHMARK_DIRS), cd $(b)/ && make build;)
-
-bench: start-xvfb $(RESULTS)
-	stop-xvfb
-
-stop-xvfb:
-	@echo "Stopping Xvfb on display $(XVFB_DISPLAY)..."
-	@if [ -f /tmp/.X$(subst :,,$(XVFB_DISPLAY))-lock ]; then \
-		echo "Killing Xvfb process..."; \
-		kill $$(ps aux | grep '[X]vfb $(XVFB_DISPLAY)' | awk '{print $$2}') || true; \
-		rm -f /tmp/.X$(subst :,,$(XVFB_DISPLAY))-lock; \
-	else \
-		echo "No Xvfb lock file found. Skipping."; \
-	fi
-
-$(RESULTS_DIR)/%.csv:
-	mkdir -p $(basename $@)/metrics/runtime
-	mkdir -p $(dir $@)heaptrack
-	- $(REBENCH_EXEC) -R -D \
-		--invocations $(PEXECS) \
-		--iterations 1 \
-		-df $@ $(PWD)/rebench_$(notdir $*).conf $(subst /,-,$(patsubst %/,%,$(dir $*)))
-
-plot: venv
-	$(REBENCH_PROCESSOR) $(PLOTS_DIR) $(RESULTS_DIR)
+grmtools-extras: $(GRMTOOLS_SRCS)
+grep-extras: $(LINUX_SRC)
 
 archive-results:
 	mkdir -p archive
@@ -138,17 +64,6 @@ $(VENV)/bin/activate: requirements.txt
 	$(PYTHON) -m venv $(VENV)
 	$(PIP) install -r requirements.txt
 
-clean: clean-confirm clean-alloy clean-builds
-	rm -rf $(ALLOY_SRC) $(HEAPTRACK_SRC) $(LIBGC_SRC)
-	@echo "Clean"
-
-clean-alloy:
-	rm -rf $(ALLOY_TARGETS)
-
-clean-builds:
-	$(foreach b, $(BENCHMARK_DIRS), cd $(b)/ && make clean-builds;)
-
 clean-confirm:
 	@echo $@
-	rm -rf $(RESULTS_DIR) $(PLOTS_DIR)
 	@( read -p "Are you sure? [y/N]: " sure && case "$$sure" in [yY]) true;; *) false;; esac )
