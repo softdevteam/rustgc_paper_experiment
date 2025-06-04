@@ -1,11 +1,11 @@
-alloy/
 bdwgc/
 heaptrack/
 plots/
 results/
-venv/
+.venv/
 bin/
 build/
-src/
+src/*
+!src/parserbench
 
-*.log
+log
