@@ -1,0 +1,203 @@
+diff --git a/crates/core/main.rs b/crates/core/main.rs
+index 64f35ce..4465c9b 100644
+--- a/crates/core/main.rs
++++ b/crates/core/main.rs
+@@ -2,6 +2,8 @@
+ The main entry point into ripgrep.
+ */
+ 
++#![feature(gc)]
++
+ use std::{io::Write, process::ExitCode};
+ 
+ use ignore::WalkState;
+@@ -16,28 +18,8 @@ mod haystack;
+ mod logger;
+ mod search;
+ 
+-// Since Rust no longer uses jemalloc by default, ripgrep will, by default,
+-// use the system allocator. On Linux, this would normally be glibc's
+-// allocator, which is pretty good. In particular, ripgrep does not have a
+-// particularly allocation heavy workload, so there really isn't much
+-// difference (for ripgrep's purposes) between glibc's allocator and jemalloc.
+-//
+-// However, when ripgrep is built with musl, this means ripgrep will use musl's
+-// allocator, which appears to be substantially worse. (musl's goal is not to
+-// have the fastest version of everything. Its goal is to be small and amenable
+-// to static compilation.) Even though ripgrep isn't particularly allocation
+-// heavy, musl's allocator appears to slow down ripgrep quite a bit. Therefore,
+-// when building with musl, we use jemalloc.
+-//
+-// We don't unconditionally use jemalloc because it can be nice to use the
+-// system's default allocator by default. Moreover, jemalloc seems to increase
+-// compilation times by a bit.
+-//
+-// Moreover, we only do this on 64-bit systems since jemalloc doesn't support
+-// i686.
+-#[cfg(all(target_env = "musl", target_pointer_width = "64"))]
+ #[global_allocator]
+-static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
++static ALLOC: std::gc::GcAllocator = std::gc::GcAllocator;
+ 
+ /// Then, as it was, then again it will be.
+ fn main() -> ExitCode {
+diff --git a/crates/globset/src/lib.rs b/crates/globset/src/lib.rs
+index e804e12..2c43805 100644
+--- a/crates/globset/src/lib.rs
++++ b/crates/globset/src/lib.rs
+@@ -1,3 +1,4 @@
++#![feature(gc)]
+ /*!
+ The globset crate provides cross platform single glob and glob set matching.
+ 
+@@ -100,9 +101,9 @@ or to enable case insensitive matching.
+ 
+ use std::{
+     borrow::Cow,
++    gc::Gc as Arc,
+     panic::{RefUnwindSafe, UnwindSafe},
+     path::Path,
+-    sync::Arc,
+ };
+ 
+ use {
+diff --git a/crates/ignore/src/dir.rs b/crates/ignore/src/dir.rs
+index b302943..0103346 100644
+--- a/crates/ignore/src/dir.rs
++++ b/crates/ignore/src/dir.rs
+@@ -17,11 +17,14 @@ use std::{
+     collections::HashMap,
+     ffi::{OsStr, OsString},
+     fs::{File, FileType},
++    gc::Gc as Arc,
+     io::{self, BufRead},
+     path::{Path, PathBuf},
+-    sync::{Arc, RwLock, Weak},
++    sync::RwLock,
+ };
+ 
++type Weak<T> = Arc<T>;
++
+ use crate::{
+     gitignore::{self, Gitignore, GitignoreBuilder},
+     overrides::{self, Override},
+@@ -201,10 +204,10 @@ impl Ignore {
+         for parent in parents.into_iter().rev() {
+             let mut compiled = self.0.compiled.write().unwrap();
+             if let Some(weak) = compiled.get(parent.as_os_str()) {
+-                if let Some(prebuilt) = weak.upgrade() {
+-                    ig = Ignore(prebuilt);
+-                    continue;
+-                }
++                //if let Some(prebuilt) = weak.unwrap() {
++                ig = Ignore(*weak);
++                continue;
++                //}
+             }
+             let (mut igtmp, err) = ig.add_child_path(parent);
+             errs.maybe_push(err);
+@@ -218,10 +221,7 @@ impl Ignore {
+                 };
+             let ig_arc = Arc::new(igtmp);
+             ig = Ignore(ig_arc.clone());
+-            compiled.insert(
+-                parent.as_os_str().to_os_string(),
+-                Arc::downgrade(&ig_arc),
+-            );
++            compiled.insert(parent.as_os_str().to_os_string(), ig_arc);
+         }
+         (ig, errs.into_error_option())
+     }
+diff --git a/crates/ignore/src/gitignore.rs b/crates/ignore/src/gitignore.rs
+index 19a347c..856b3d3 100644
+--- a/crates/ignore/src/gitignore.rs
++++ b/crates/ignore/src/gitignore.rs
+@@ -11,7 +11,7 @@ use std::{
+     fs::File,
+     io::{BufRead, BufReader, Read},
+     path::{Path, PathBuf},
+-    sync::Arc,
++    gc::Gc as Arc,
+ };
+ 
+ use {
+diff --git a/crates/ignore/src/lib.rs b/crates/ignore/src/lib.rs
+index a5d5ca3..a73fb1c 100644
+--- a/crates/ignore/src/lib.rs
++++ b/crates/ignore/src/lib.rs
+@@ -1,3 +1,4 @@
++#![feature(gc)]
+ /*!
+ The ignore crate provides a fast recursive directory iterator that respects
+ various filters such as globs, file types and `.gitignore` files. The precise
+diff --git a/crates/ignore/src/types.rs b/crates/ignore/src/types.rs
+index 308b784..27fd6c0 100644
+--- a/crates/ignore/src/types.rs
++++ b/crates/ignore/src/types.rs
+@@ -84,7 +84,7 @@ assert!(matcher.matched("y.cpp", false).is_whitelist());
+ ```
+ */
+ 
+-use std::{collections::HashMap, path::Path, sync::Arc};
++use std::{collections::HashMap, path::Path, gc::Gc as Arc};
+ 
+ use {
+     globset::{GlobBuilder, GlobSet, GlobSetBuilder},
+diff --git a/crates/ignore/src/walk.rs b/crates/ignore/src/walk.rs
+index d6ea9c2..08627ef 100644
+--- a/crates/ignore/src/walk.rs
++++ b/crates/ignore/src/walk.rs
+@@ -5,7 +5,7 @@ use std::{
+     io,
+     path::{Path, PathBuf},
+     sync::atomic::{AtomicBool, AtomicUsize, Ordering as AtomicOrdering},
+-    sync::Arc,
++    gc::Gc as Arc,
+ };
+ 
+ use {
+diff --git a/crates/printer/src/hyperlink.rs b/crates/printer/src/hyperlink.rs
+index ec1fd92..6cfa673 100644
+--- a/crates/printer/src/hyperlink.rs
++++ b/crates/printer/src/hyperlink.rs
+@@ -1,4 +1,4 @@
+-use std::{cell::RefCell, io, path::Path, sync::Arc};
++use std::{cell::RefCell, io, path::Path, gc::Gc as Arc};
+ 
+ use {
+     bstr::ByteSlice,
+diff --git a/crates/printer/src/lib.rs b/crates/printer/src/lib.rs
+index 5748862..2135863 100644
+--- a/crates/printer/src/lib.rs
++++ b/crates/printer/src/lib.rs
+@@ -1,3 +1,4 @@
++#![feature(gc)]
+ /*!
+ This crate provides featureful and fast printers that interoperate with the
+ [`grep-searcher`](https://docs.rs/grep-searcher)
+diff --git a/crates/printer/src/standard.rs b/crates/printer/src/standard.rs
+index 6cc5374..ab06027 100644
+--- a/crates/printer/src/standard.rs
++++ b/crates/printer/src/standard.rs
+@@ -3,7 +3,7 @@ use std::{
+     cmp,
+     io::{self, Write},
+     path::Path,
+-    sync::Arc,
++    gc::Gc as Arc,
+     time::Instant,
+ };
+ 
+diff --git a/crates/printer/src/summary.rs b/crates/printer/src/summary.rs
+index 275419d..222ed41 100644
+--- a/crates/printer/src/summary.rs
++++ b/crates/printer/src/summary.rs
+@@ -2,7 +2,7 @@ use std::{
+     cell::RefCell,
+     io::{self, Write},
+     path::Path,
+-    sync::Arc,
++    gc::Gc as Arc,
+     time::Instant,
+ };
+ 

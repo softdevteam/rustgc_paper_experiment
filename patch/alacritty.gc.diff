@@ -1,0 +1,145 @@
+diff --git a/alacritty/src/main.rs b/alacritty/src/main.rs
+index 6bbf8dfd..e80a28fa 100644
+--- a/alacritty/src/main.rs
++++ b/alacritty/src/main.rs
+@@ -1,5 +1,6 @@
+ //! Alacritty - The GPU Enhanced Terminal.
+ 
++#![feature(gc)]
+ #![warn(rust_2018_idioms, future_incompatible)]
+ #![deny(clippy::all, clippy::if_not_else, clippy::enum_glob_use)]
+ #![cfg_attr(clippy, deny(warnings))]
+@@ -18,6 +19,10 @@ use std::io::{self, Write};
+ use std::path::PathBuf;
+ use std::{env, fs};
+ 
++use std::gc::GcAllocator;
++#[global_allocator]
++static A: GcAllocator = GcAllocator;
++
+ use log::info;
+ #[cfg(windows)]
+ use windows_sys::Win32::System::Console::{AttachConsole, FreeConsole, ATTACH_PARENT_PROCESS};
+diff --git a/alacritty/src/window_context.rs b/alacritty/src/window_context.rs
+index cfc3cd96..bfca494b 100644
+--- a/alacritty/src/window_context.rs
++++ b/alacritty/src/window_context.rs
+@@ -7,7 +7,7 @@ use std::mem;
+ #[cfg(not(windows))]
+ use std::os::unix::io::{AsRawFd, RawFd};
+ use std::rc::Rc;
+-use std::sync::Arc;
++use std::gc::Gc as Arc;
+ 
+ use glutin::config::Config as GlutinConfig;
+ use glutin::display::GetGlDisplay;
+@@ -43,6 +43,7 @@ use crate::message_bar::MessageBuffer;
+ use crate::scheduler::Scheduler;
+ use crate::{input, renderer};
+ 
++
+ /// Event context for one individual Alacritty window.
+ pub struct WindowContext {
+     pub message_buffer: MessageBuffer,
+diff --git a/alacritty_terminal/src/event.rs b/alacritty_terminal/src/event.rs
+index e17d41ea..f6566c6a 100644
+--- a/alacritty_terminal/src/event.rs
++++ b/alacritty_terminal/src/event.rs
+@@ -1,6 +1,6 @@
+ use std::borrow::Cow;
+ use std::fmt::{self, Debug, Formatter};
+-use std::sync::Arc;
++use std::gc::Gc as Arc;
+ 
+ use crate::term::ClipboardType;
+ use crate::vte::ansi::Rgb;
+diff --git a/alacritty_terminal/src/event_loop.rs b/alacritty_terminal/src/event_loop.rs
+index 62dd7440..5863f0d0 100644
+--- a/alacritty_terminal/src/event_loop.rs
++++ b/alacritty_terminal/src/event_loop.rs
+@@ -7,7 +7,7 @@ use std::fs::File;
+ use std::io::{self, ErrorKind, Read, Write};
+ use std::num::NonZeroUsize;
+ use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
+-use std::sync::Arc;
++use std::gc::Gc as Arc;
+ use std::thread::JoinHandle;
+ use std::time::Instant;
+ 
+diff --git a/alacritty_terminal/src/lib.rs b/alacritty_terminal/src/lib.rs
+index 7324473c..c9acdb63 100644
+--- a/alacritty_terminal/src/lib.rs
++++ b/alacritty_terminal/src/lib.rs
+@@ -3,6 +3,7 @@
+ #![warn(rust_2018_idioms, future_incompatible)]
+ #![deny(clippy::all, clippy::if_not_else, clippy::enum_glob_use)]
+ #![cfg_attr(clippy, deny(warnings))]
++#![feature(gc)]
+ 
+ pub mod event;
+ pub mod event_loop;
+diff --git a/alacritty_terminal/src/term/mod.rs b/alacritty_terminal/src/term/mod.rs
+index 1f1e52c1..6a53fa0f 100644
+--- a/alacritty_terminal/src/term/mod.rs
++++ b/alacritty_terminal/src/term/mod.rs
+@@ -1,7 +1,7 @@
+ //! Exports the `Term` type which is a high-level API for the Grid.
+ 
+ use std::ops::{Index, IndexMut, Range};
+-use std::sync::Arc;
++use std::gc::Gc as Arc;
+ use std::{cmp, mem, ptr, slice, str};
+ 
+ #[cfg(feature = "serde")]
+diff --git a/alacritty_terminal/src/tty/mod.rs b/alacritty_terminal/src/tty/mod.rs
+index eed2a76d..d436c6e0 100644
+--- a/alacritty_terminal/src/tty/mod.rs
++++ b/alacritty_terminal/src/tty/mod.rs
+@@ -2,7 +2,7 @@
+ 
+ use std::collections::HashMap;
+ use std::path::PathBuf;
+-use std::sync::Arc;
++use std::gc::Gc as Arc;
+ use std::{env, io};
+ 
+ use polling::{Event, PollMode, Poller};
+diff --git a/alacritty_terminal/src/tty/unix.rs b/alacritty_terminal/src/tty/unix.rs
+index 6565f20b..19561727 100644
+--- a/alacritty_terminal/src/tty/unix.rs
++++ b/alacritty_terminal/src/tty/unix.rs
+@@ -9,7 +9,7 @@ use std::os::unix::io::AsRawFd;
+ use std::os::unix::net::UnixStream;
+ use std::os::unix::process::CommandExt;
+ use std::process::{Child, Command};
+-use std::sync::Arc;
++use std::gc::Gc as Arc;
+ use std::{env, ptr};
+ 
+ use libc::{c_int, TIOCSCTTY};
+diff --git a/alacritty_terminal/src/tty/windows/child.rs b/alacritty_terminal/src/tty/windows/child.rs
+index 573eb475..3607410e 100644
+--- a/alacritty_terminal/src/tty/windows/child.rs
++++ b/alacritty_terminal/src/tty/windows/child.rs
+@@ -134,7 +134,7 @@ impl Drop for ChildExitWatcher {
+ mod tests {
+     use std::os::windows::io::AsRawHandle;
+     use std::process::Command;
+-    use std::sync::Arc;
++    use std::gc::Gc as Arc;
+     use std::time::Duration;
+ 
+     use super::super::PTY_CHILD_EVENT_TOKEN;
+diff --git a/alacritty_terminal/src/tty/windows/mod.rs b/alacritty_terminal/src/tty/windows/mod.rs
+index 32e24677..d9790869 100644
+--- a/alacritty_terminal/src/tty/windows/mod.rs
++++ b/alacritty_terminal/src/tty/windows/mod.rs
+@@ -3,7 +3,7 @@ use std::io::{self, Result};
+ use std::iter::once;
+ use std::os::windows::ffi::OsStrExt;
+ use std::sync::mpsc::TryRecvError;
+-use std::sync::Arc;
++use std::gc::Gc as Arc;
+ 
+ use crate::event::{OnResize, WindowSize};
+ use crate::tty::windows::child::ChildExitWatcher;
