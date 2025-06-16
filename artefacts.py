@@ -194,28 +194,25 @@ class Crate(Artefact):
 
 class Alloy(Artefact):
     profile: "ExperimentProfile"
-    metric: "Metric"
 
-    def __init__(self, base: Artefact, profile: "ExperimentProfile", metric: "Metric"):
+    def __init__(self, base: Artefact, profile: "ExperimentProfile"):
         self.__dict__.update(base.__dict__)
         self.profile = profile
-        self.metric = metric
 
     @property
     def config(self) -> Path:
         return (
             Path("alloy").resolve()
-            / f"{self.profile.value.replace('-','.')}.{self.metric.value}.config.toml"
+            / f"{self.profile.value.replace('-','.')}.config.toml"
         )
 
     @property
     def install_prefix(self) -> Path:
         return (
             BIN_DIR
-            / self.metric.value
             / self.repo.name
             / self.profile.experiment
-            / self.profile.name.lower()
+            / self.profile.value
         )
 
     @property
@@ -226,22 +223,14 @@ class Alloy(Artefact):
     def build_dir(self) -> Path:
         return (
             BUILD_DIR
-            / self.metric.value
             / self.repo.name
             / self.profile.experiment
-            / self.profile.name.lower()
+            / self.profile.value
         )
 
     @property
-    def env(self) -> dict:
-        return {
-            "LD_LIBRARY_PATH": f"{self.deps[0].path.parent}",
-            "RUSTFLAGS": f"-L {self.deps[0].path.parent}",
-        }
-
-    @property
     def name(self) -> str:
-        return f"{self.repo.name} | {self.profile.full} ({self.metric.value})"
+        return f"{self.repo.name} | {self.profile.full}"
 
     @command_runner(description="Building")
     def _xpy_install(self):
@@ -251,7 +240,7 @@ class Alloy(Artefact):
             "--config",
             self.config,
             "--stage",
-            "1",
+            "2",
             "--build-dir",
             self.build_dir,
             "--set",
