@@ -4,7 +4,7 @@ import shutil
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 from util import command_runner
 
@@ -203,7 +203,7 @@ class Alloy(Artefact):
     def config(self) -> Path:
         return (
             Path("alloy").resolve()
-            / f"{self.profile.value.replace('-','.')}.config.toml"
+            / f"{self.profile.full.replace('-','.')}.config.toml"
         )
 
     @property
@@ -312,7 +312,7 @@ class Executor(Crate):
 
     @property
     def alloy(self) -> "Alloy":
-        return self.profile.alloy(self.metric)
+        return self.profile.alloy()
 
     @prepare_build
     def build(self):
@@ -358,50 +358,7 @@ class CustomExecutor:
         return None
 
 
-class Bdwgc(Artefact):
-    @command_runner(description="Preparing", steps=100)
-    def _cmake(self):
-        return [
-            "cmake",
-            "-B",
-            f"{self.build_dir}",
-            "-S",
-            f"{self.src}",
-            "-DCMAKE_BUILD_TYPE=Release",
-            f"-DCMAKE_INSTALL_PREFIX={self.install_prefix}",
-            "-DCMAKE_C_FLAGS='-DGC_ALWAYS_MULTITHREADED, -DVALGRIND_TRACKING'",
-            f"{self.src}",
-        ]
-
-    @command_runner(description="Building", steps=100)
-    def _make(self):
-        return ["make", "-C", f"{self.build_dir}", "install"]
-
-    @prepare_build
-    def build(self):
-        self._cmake()
-        self._make()
-
-    @property
-    def install_prefix(self) -> Path:
-        return LIB_DIR / self.repo.name
-
-    @property
-    def path(self) -> Path:
-        return self.install_prefix / "lib" / self.name
-
-
 ALLOY = Artefact(
-    deps=(
-        Bdwgc(
-            "libgc.so",
-            repo=Repo(
-                name="bdwgc",
-                url="https://github.com/softdevteam/bdwgc",
-                version="e49b178f892d8e4b65785029c4fba3480850ce62",
-            ),
-        ),
-    ),
     steps=5489,
     repo=Repo(
         name="alloy",
