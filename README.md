@@ -157,17 +157,105 @@ dramatically speeding up the time needed to run the benchmarks.
 
 ### Dependencies
 
-#### Debian / Ubuntu
+The experiments require a lot of development tools and libraries. Below, you’ll
+find package installation commands for the two tested Linux distributions:
+Debian and Arch Linux. Alternatively, you can install the packages manually and
+use the checklist to track your progress. Most other distributions should
+provide equivalent packages, though names may vary and we have not tested them.
 
-```
-apt install -y make build-essential curl git cmake python3 libtinfo-dev libzip-dev ninja-build gdb pipx rsync libdwarf-dev libunwind-dev libboost-dev libboost-iostreams-dev libboost-program-options-dev zlib1g-dev zstd elfutils pkg-config libssl-dev zlib1g-dev liblzma-dev libffi-dev libedit-dev llvm-dev clang procps autotools-dev gperf bison flex xvfb
+<details>
+  <summary>Debian</summary>
+
+To install all dependencies at once, run the following command (with `sudo` or `doas`):
+
+```sh
+apt install -y make build-essential curl git cmake python3 libtinfo-dev libzip-dev ninja-build gdb pipx rsync libdwarf-dev libunwind-dev libboost-dev libboost-iostreams-dev libboost-program-options-dev zlib1g-dev zstd elfutils pkg-config libssl-dev liblzma-dev libffi-dev libedit-dev llvm-dev clang procps autotools-dev gperf bison flex xvfb
 ```
 
-#### Arch
+Alternatively, you can install packages individually and check them off below:
 
-```
+- [ ] make
+- [ ] build-essential
+- [ ] curl
+- [ ] git
+- [ ] cmake
+- [ ] python3
+- [ ] libtinfo-dev
+- [ ] libzip-dev
+- [ ] ninja-build
+- [ ] gdb
+- [ ] pipx
+- [ ] rsync
+- [ ] libdwarf-dev
+- [ ] libunwind-dev
+- [ ] libboost-dev
+- [ ] libboost-iostreams-dev
+- [ ] libboost-program-options-dev
+- [ ] zlib1g-dev
+- [ ] zstd
+- [ ] elfutils
+- [ ] pkg-config
+- [ ] libssl-dev
+- [ ] liblzma-dev
+- [ ] libffi-dev
+- [ ] libedit-dev
+- [ ] llvm-dev
+- [ ] clang
+- [ ] procps
+- [ ] autotools-dev
+- [ ] gperf
+- [ ] bison
+- [ ] flex
+- [ ] xvfb
+
+</details>
+
+<details>
+  <summary>Arch Linux</summary>
+
+To install all dependencies at once, run the following command (with `sudo` or `doas`):
+
+```sh
 sudo pacman -Syu --needed base-devel make curl git cmake python ncurses libzip ninja gdb python-pipx rsync libdwarf libunwind boost boost-libs zlib zstd elfutils pkgconf openssl xz libffi libedit llvm clang procps-ng autoconf automake gperf bison flex xorg-server-xvfb
 ```
+
+Alternatively, you can install packages individually and check them off below:
+
+- [ ] base-devel
+- [ ] make
+- [ ] curl
+- [ ] git
+- [ ] cmake
+- [ ] python
+- [ ] ncurses
+- [ ] libzip
+- [ ] ninja
+- [ ] gdb
+- [ ] python-pipx
+- [ ] rsync
+- [ ] libdwarf
+- [ ] libunwind
+- [ ] boost
+- [ ] boost-libs
+- [ ] zlib
+- [ ] zstd
+- [ ] elfutils
+- [ ] pkgconf
+- [ ] openssl
+- [ ] xz
+- [ ] libffi
+- [ ] libedit
+- [ ] llvm
+- [ ] clang
+- [ ] procps-ng
+- [ ] autoconf
+- [ ] automake
+- [ ] gperf
+- [ ] bison
+- [ ] flex
+- [ ] xorg-server-xvfb
+
+</details>
 
 ### Building and running on bare-metal
 
