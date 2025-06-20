@@ -208,12 +208,7 @@ class Alloy(Artefact):
 
     @property
     def install_prefix(self) -> Path:
-        return (
-            BIN_DIR
-            / self.repo.name
-            / self.profile.experiment
-            / self.profile.value
-        )
+        return BIN_DIR / self.repo.name / self.profile.experiment / self.profile.value
 
     @property
     def path(self) -> Path:
@@ -221,16 +216,15 @@ class Alloy(Artefact):
 
     @property
     def build_dir(self) -> Path:
-        return (
-            BUILD_DIR
-            / self.repo.name
-            / self.profile.experiment
-            / self.profile.value
-        )
+        return BUILD_DIR / self.repo.name / self.profile.experiment / self.profile.value
 
     @property
     def name(self) -> str:
         return f"{self.repo.name} | {self.profile.full}"
+
+    @property
+    def installed(self) -> bool:
+        return self.path.exists()
 
     @command_runner(description="Building")
     def _xpy_install(self):
@@ -306,9 +300,7 @@ class Executor(Crate):
 
     @property
     def env(self):
-        env = self.alloy.env.copy()
-        env.update({"RUSTC": self.alloy.path})
-        return env
+        return {"RUSTC": self.alloy.path}
 
     @property
     def alloy(self) -> "Alloy":
