@@ -112,20 +112,6 @@ make run-full
 This will run each experiment 30 times -- the same number of iterations we used
 in the paper.
 
-## Filtering which experiments are run
-
-We provide the following additional environment variables which can be used to
-run a subset of the available experiments.
-
-`BENCHMARKS` -- The benchmarks to run, provided as a space separated list containing any combination of the following: `alacritty`, `binary-trees`, `fd`, `grmtools`, `regex-redux`, `ripgrep`, or `som`.
-
-`EXPERIMENTS` -- The experiments to run, provided as a space separated list containing any combination of the following: `gcvs`, `elision`, `premopt`.
-
-`METRICS` -- `perf` or `mem`. Note that the bulk of running time needed to run
-these experiments comes from the `mem` experiments, so you may prefer to just run the `perf` ones.
-
-All variables can be used in combination with eachother.
-
 ## Running the experiments on bare-metal
 
 We recommend that you use the docker image as there are lots of required
@@ -264,3 +250,133 @@ Once you have installed the required dependencies, you can run the experiments w
 `make bare-metal`
 
 The same environment variables as above will also work here too.
+
+---
+
+## Customizing Experiment Runs
+
+> [!INFO]
+> Running the full experiment suite with all configurations, as described in our
+> paper, is a time- and resource-intensive process. On our benchmarking server
+> (64 cores, 128 GiB RAM), a complete run takes over 48 hours and consumes
+> approximately 300 GiB of disk space for build artifacts and raw results. To
+> save time and storage, you may wish to run only a subset of experiments or
+> reduce the number of iterations (or increase them, if desired). This can be
+> easily configured using environment variables, which let you specify exactly
+> what to run.
+
+You can customise which experiments and benchmarks are run using the following
+environment variables.
+
+**These variables can be used whether you are running experiments via Docker or directly on bare metal.**
+
+- **`EXPERIMENTS`**
+  Space-separated list of experiments to run.
+
+  Options:
+  - **`gcvs`**: Compare Alloy with other memory management approaches (e.g.,
+  Rc). Not all benchmark suites have the same variants, but each will include a
+  variant using the baseline system allocator and the program’s original memory
+  strategy.
+  - **`elision`**: Evaluates the *finalizer elision optimization* (see Section
+  7.3 of the paper) by comparing two Alloy configurations: with elision and
+  without elision.
+  - **`premopt`**: Evaluates the cost of *premature finalizer prevention*
+  (Section 8.3 of the paper) by comparing three Alloy configurations: naive
+  (barriers for every garbage-collected pointer), opt (unnecessary barriers
+  optimized away), and none (idealized version with no barriers; this is unsound).
+
+  **Default:** `EXPERIMENTS="gcvs elision premopt"`
+
+- **`SUITES`**
+  Space-separated list of benchmark suites to run.
+
+  Options:
+  - **`alacritty`**: Terminal emulator workload ([repo](https://github.com/alacritty/alacritty)).
+  - **`binary-trees`**: Classic binary trees microbenchmark ([repo](#)).
+  - **`fd`**: A rust alternative to the UNIX `find` command ([repo](https://github.com/sharkdp/fd)).
+  - **`grmtools`**: Parsing benchmark of the grmtools error recovery algorithm ([repo](https://github.com/softdevteam/grmtools)).
+  - **`regex-redux`**: Regular expression processing benchmark ([repo](#)).
+  - **`ripgrep`**: Real-world text searching workload ([repo](https://github.com/BurntSushi/ripgrep)).
+  - **`som-rs-ast`**: Smalltalk interpreter (AST variant) ([repo](https://github.com/Hirevo/som-rs)).
+  - **`som-rs-bc`**: Smalltalk interpreter (bytecode variant) ([repo](https://github.com/Hirevo/som-rs)).
+  - **`yksom`**: Alternative Smalltalk interpreter for Alloy configuration comparisons only ([repo](https://github.com/softdevteam/yksom)).
+    *Note:* `yksom` does not run with the `gcvs` experiment.
+
+  **Default:** `SUITES="alacritty binary-trees fd grmtools regex-redux ripgrep som-rs-ast som-rs-bc yksom"`
+
+- **`MEASUREMENTS`**
+  Specifies which types of data to record.
+
+  Options:
+  - **`perf`**: Collects performance data (wall-clock and system-time).
+  - **`mem`**: Gathers detailed memory allocation data for the `gcvs` experiment using [KDE HeapTrack](https://github.com/KDE/heaptrack) (resource-intensive).
+  - **`metrics`**: Records high-level experiment metrics (e.g., collection counts, pause times, finalizers run, etc ).
+
+  **Default:** `MEASUREMENTS="perf mem metrics"`
+  *Note:* The `mem` measurement is the most resource-intensive. For most purposes, using just `perf` and `metrics` will suffice and is much faster.
+
+- **`PEXECS`**
+  Number of process executions (iterations) per experiment.
+
+  **Default:** `PEXECS=5` for the quick prebuilt binary Docker image, or `PEXECS=30` otherwise (as in our paper).
+  *Note:* Fewer iterations will run faster but result in wider confidence intervals and potentially less statistically significant results.
+
+You can combine these environment variables in any way to customize which
+experiments are run.
+
+**Example:**
+
+To run the Docker prebuilt experiments with 10 process executions and only the `perf` and `metrics` measurements:
+
+```sh
+PEXECS=10 MEASUREMENTS="perf metrics" make run-quick
+```
+
+## Differences from Initial Submission
+
+Since the initial submission, we have updated both the experimental evaluation
+and Alloy itself. These changes may affect how the data is presented, as well
+as the results themselves. Below, we outline the main modifications and any
+observed impact on the data.
+
+---
+
+### Experiment Modifications
+
+- We have pre-emptively included additional metrics that were requested by reviewers during the peer review process. Metrics highlighted in **bold** below were explicitly requested by reviewers; the others were added to improve the accuracy and completeness of comparisons.
+
+  These include:
+  - **Baseline allocator results for each benchmark suite**
+  - **GC cycle counts**
+  - **A breakdown of GC pause times**
+  - **Different heap sizes**
+  - More detailed finalizer breakdown, including both recursive drop calls and the initial outer drop method.
+  - Bug fixes to the heap metric breakdown, allowing more accurate recording of the number of different shared memory types.
+
+---
+
+### Alloy Modifications
+
+Since the original submission, we have made several improvements to Alloy that may impact experimental results.
+*Only changes with potential runtime impact are listed below.*
+
+- A new implementation of the finalization queue that uses BDWGC’s `finalize_on_demand` API
+  [[PR #179](https://github.com/softdevteam/alloy/pull/179), [PR #177](https://github.com/softdevteam/alloy/pull/177)]
+
+- Alloy now always dynamically links against BDWGC’s `libgc` library, which may influence compiler optimizations such as inlining
+  [[PR #189](https://github.com/softdevteam/alloy/pull/189), [PR #187](https://github.com/softdevteam/alloy/pull/187), [PR #183](https://github.com/softdevteam/alloy/pull/183), [PR #185](https://github.com/softdevteam/alloy/pull/185), [PR (bdwgc) #29](https://github.com/softdevteam/bdwgc/pull/29)]
+
+- The default global allocator is now set to BDWGC’s allocator automatically, so users no longer need to specify it with `#[global_allocator]`. While this change is unlikely to affect performance, we cannot completely rule it out
+  [[PR #192](https://github.com/softdevteam/alloy/pull/192)]
+
+---
+
+### Observed Differences in Results
+
+- *TODO:* Add a detailed explanation of which results were affected.
+
+---
+
+This section will be updated with further details as the artefact evaluation progresses.
+
