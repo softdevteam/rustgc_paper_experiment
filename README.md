@@ -5,55 +5,123 @@ Finalizer Frontier"](https://arxiv.org/abs/2504.01841) by Jacob Hughes and
 Laurence Tratt. The repository for the paper can be found at
 https://github.com/softdevteam/rustgc_paper.
 
+## Quickstart
+
+To quickly run the experiments using prebuilt binaries, first make sure your
+system meets the [requirements](#system-requirements-1) and has the necessary
+[dependencies](#dependencies-1) installed. Also, ensure that Docker is running
+before proceeding.
+
+Then, execute the following commands:
+
+```sh
+git clone https://github.com/softdevteam/rustgc_paper_experiment
+cd rustgc_paper_experiment
+make run-quick
+```
+
+This will run each experiment 5 times using the pre-built Docker image. Raw
+experiment data will be saved in the `results` directory at the project root,
+and the generated plots will be available in the `plots` directory.
+
+For more information and alternative setup methods, please refer to the
+sections below.
+
 ## Reproducing our experiments
 
-We provide a docker file so that you can easily run the experiments. You will
-need to have `git`, `GNU make`, `docker-engine`, and `docker-buildkit` installed.
-Instructions for installing the required `docker` packages can be found
-[here](https://docs.docker.com/engine/install/debian/).
+We offer two ways to run our experiments:
 
-Once installed, you can run our experiments with the following commands:
+1. **[Using the Provided Docker Image (Recommended)](#using-the-docker-image):**
+ This method uses our pre-built Docker image, which comes with all necessary
+dependencies and offers the simplest setup experience. Note that results may be
+slightly less accurate than running on bare metal due to potential
+virtualization overhead.
 
-```bash
+2. **[Running Natively (Bare Metal)](#running-natively-bare-metal):**
+Alternatively, you can run the experiments directly on your own system. This
+involves manually installing all required dependencies, but may yield
+more accurate benchmarking results by avoiding virtualization overhead.
+
+> [!WARNING]
+> **Platform Limitations**
+>
+> Bare-metal experiments with Alloy have only been tested on Linux systems with
+> x86-64 hardware. Running bare-metal experiments on macOS is not supported
+> natively due to platform-dependent features in Alloy;  macOS users must
+> therefore use provided Docker image, but note that this will be slower
+> because it relies on QEMU-based emulation. Support for other operating
+> systems, including BSD-like platforms, is currently unknown and untested.
+> Other OSes may also require additional dependencies that we are unaware of.
+
+## Using the Docker Image (Recommended)
+
+This approach relies on a pre-built Docker image that includes all required
+dependencies, providing a consistent environment across different host systems.
+To run experiments using this method, ensure your host machine meets the
+following requirements and has the necessary dependencies installed.
+
+### System Requirements
+
+- Any 64-bit OS capable of running Docker with Linux container support (e.g.,
+Linux, macOS with Docker Desktop, or Windows with Docker Desktop)
+- x86_64 or ARM architecture
+- At least 8 GB RAM and 30 GB free disk space
+- Internet connection
+
+### Dependencies
+
+- `git`
+- `GNU make`
+- `docker-engine`
+- `docker-buildkit`
+
+If you need to install Docker, refer to [Appendix A: Installing Docker on
+Debian](#appendix-a-installing-docker-on-debian) for a quick Debian-specific
+guide. For installation instructions on other platforms, please see the
+[official Docker documentation](https://docs.docker.com/engine/install/).
+
+---
+
+### Running the experiments
+
+Begin by cloning the repository and navigating into its directory:
+
+```sh
 git clone https://github.com/softdevteam/rustgc_paper_experiment
-cd rustgc_paper_experiment && make
-
+cd rustgc_paper_experiment
 ```
 
-This will ensure all dependencies are installed, build the different variants
-of Alloy needed for the experiments, and then build and run them for 5
-iterations each. Note that this is considerably lower than the 30 iterations we
-used in the paper. You can adjust how many iterations you wish to run the
-benchmarks for with the `PEXECS` environment variable. E.g. to use the same
-number of iterations as in the paper:
+You can now run one of the two docker-based experiment methods.
 
-```bash
-PEXECS=30 make
-```
-Please note that using `30` iterations for each benchmark can take between
-24-48 hours to run.
+#### 1. Using Prebuilt Binaries (Recommended for Quick Setup)
 
-## Interpreting the results
+This method uses prebuilt binaries for the different Alloy and Benchmark
+configurations within the Docker image. It is ideal if you want to save time or
+quickly verify the experiments without building everything from source.
 
-Once the experiments have finished running, you will see two new top-level directories:
+With the Docker service running, execute the following command:
 
-- `results` the raw data from the experiments. Includes perf data, memory
-  traces, and Alloy metrics for each iteration.
-- `plots` the various plots and tables as seen in the paper. These are
-  `.ltx` and `.pdf` files.
-
-You can examine the `raw_data` and `plots` individually, or you can
-rebuild our paper with the data from your run by first downloading the paper
-source:
-
-```
-git clone https://github.com/softdevteam/rustgc_paper
-cd rustgc_paper
+```sh
+make run-quick
 ```
 
-Then copy the `plots` directory over, replacing the one in `rustgc_paper`. You
-can then run `make` from inside `rustgc_paper` which will build a file
-`rustgc_paper.pdf` with your data in.
+This will execute each experiment 5 times.
+
+#### 2. Building Configurations from Source (For Full Replication)
+
+This method involves building all components from source within the Docker
+environment. It is recommended if you wish to fully replicate the experiments
+as described in our paper, or if you want to inspect or modify the source code
+during the process.
+
+With the Docker service running, execute the following command:
+
+```sh
+make run-full
+```
+
+This will run each experiment 30 times -- the same number of iterations we used
+in the paper.
 
 ## Filtering which experiments are run
 
