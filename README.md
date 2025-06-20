@@ -299,10 +299,10 @@ environment variables.
   variant using the baseline system allocator and the program’s original memory
   strategy.
   - **`elision`**: Evaluates the *finalizer elision optimization* (see Section
-  7.3 of the paper) by comparing two Alloy configurations: with elision and
+  5 of the paper) by comparing two Alloy configurations: with elision and
   without elision.
   - **`premopt`**: Evaluates the cost of *premature finalizer prevention*
-  (Section 8.3 of the paper) by comparing three Alloy configurations: naive
+  (Section 6 of the paper) by comparing three Alloy configurations: naive
   (barriers for every garbage-collected pointer), opt (unnecessary barriers
   optimized away), and none (idealized version with no barriers; this is unsound).
 
