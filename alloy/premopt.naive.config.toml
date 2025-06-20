@@ -1,5 +1,5 @@
 [alloy]
-log-stats = true
+gc-metrics = true
 finalizer-elision = true
 finalizer-safety-analysis = false
 premature-finalizer-prevention = true
