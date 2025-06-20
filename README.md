@@ -5,6 +5,8 @@ Finalizer Frontier"](https://arxiv.org/abs/2504.01841) by Jacob Hughes and
 Laurence Tratt. The repository for the paper can be found at
 https://github.com/softdevteam/rustgc_paper.
 
+---
+
 ## Quickstart
 
 To quickly run the experiments using prebuilt binaries, first make sure your
@@ -27,6 +29,8 @@ and the generated plots will be available in the `plots` directory.
 For more information and alternative setup methods, please refer to the
 sections below.
 
+---
+
 ## Table of Contents
 
 - [Reproducing our experiments](#reproducing-our-experiments)
@@ -46,6 +50,8 @@ sections below.
   - [Alloy Modifications](#alloy-modifications)
   - [Observed Differences in Results](#observed-differences-in-results)
 
+---
+
 ## Reproducing our experiments
 
 We offer two ways to run our experiments:
@@ -60,6 +66,8 @@ virtualization overhead.
 Alternatively, you can run the experiments directly on your own system. This
 involves manually installing all required dependencies, but may yield
 more accurate benchmarking results by avoiding virtualization overhead.
+
+---
 
 ## Using the Docker Image (Recommended)
 
@@ -87,8 +95,6 @@ If you need to install Docker, refer to [Appendix: Installing Docker on
 Debian](#appendix-installing-docker-on-debian) for a quick Debian-specific
 guide. For installation instructions on other platforms, please see the
 [official Docker documentation](https://docs.docker.com/engine/install/).
-
----
 
 ### Running the experiments
 
@@ -352,14 +358,14 @@ To run the Docker prebuilt experiments with 10 process executions and only the `
 PEXECS=10 MEASUREMENTS="perf metrics" make run-quick
 ```
 
+---
+
 ## Differences from Initial Submission
 
 Since the initial submission, we have updated both the experimental evaluation
 and Alloy itself. These changes may affect how the data is presented, as well
 as the results themselves. Below, we outline the main modifications and any
 observed impact on the data.
-
----
 
 ### Experiment Modifications
 
@@ -372,8 +378,6 @@ observed impact on the data.
   - **Different heap sizes**
   - More detailed finalizer breakdown, including both recursive drop calls and the initial outer drop method.
   - Bug fixes to the heap metric breakdown, allowing more accurate recording of the number of different shared memory types.
-
----
 
 ### Alloy Modifications
 
@@ -389,13 +393,9 @@ Since the original submission, we have made several improvements to Alloy that m
 - The default global allocator is now set to BDWGC’s allocator automatically, so users no longer need to specify it with `#[global_allocator]`. While this change is unlikely to affect performance, we cannot completely rule it out
   [[PR #192](https://github.com/softdevteam/alloy/pull/192)]
 
----
-
 ### Observed Differences in Results
 
 - *TODO:* Add a detailed explanation of which results were affected.
-
----
 
 This section will be updated with further details as the artefact evaluation progresses.
 
