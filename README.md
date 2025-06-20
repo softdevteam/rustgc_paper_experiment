@@ -27,6 +27,25 @@ and the generated plots will be available in the `plots` directory.
 For more information and alternative setup methods, please refer to the
 sections below.
 
+## Table of Contents
+
+- [Reproducing our experiments](#reproducing-our-experiments)
+  - [Using the Docker Image (Recommended)](#using-the-docker-image-recommended)
+    - [System Requirements](#system-requirements)
+    - [Dependencies](#dependencies)
+    - [Running the experiments](#running-the-experiments)
+      - [1. Using Prebuilt Binaries (Recommended for Quick Setup)](#1-using-prebuilt-binaries-recommended-for-quick-setup)
+      - [2. Building Configurations from Source (For Full Replication)](#2-building-configurations-from-source-for-full-replication)
+  - [Running the experiments on bare-metal](#running-the-experiments-on-bare-metal)
+    - [System Requirements](#system-requirements-1)
+    - [Dependencies](#dependencies-1)
+    - [Building and running on bare-metal](#building-and-running-on-bare-metal)
+- [Customizing Experiment Runs](#customizing-experiment-runs)
+- [Differences from Initial Submission](#differences-from-initial-submission)
+  - [Experiment Modifications](#experiment-modifications)
+  - [Alloy Modifications](#alloy-modifications)
+  - [Observed Differences in Results](#observed-differences-in-results)
+
 ## Reproducing our experiments
 
 We offer two ways to run our experiments:
@@ -64,8 +83,8 @@ Linux, macOS with Docker Desktop, or Windows with Docker Desktop)
 - `docker-engine`
 - `docker-buildkit`
 
-If you need to install Docker, refer to [Appendix A: Installing Docker on
-Debian](#appendix-a-installing-docker-on-debian) for a quick Debian-specific
+If you need to install Docker, refer to [Appendix: Installing Docker on
+Debian](#appendix-installing-docker-on-debian) for a quick Debian-specific
 guide. For installation instructions on other platforms, please see the
 [official Docker documentation](https://docs.docker.com/engine/install/).
 
@@ -380,3 +399,29 @@ Since the original submission, we have made several improvements to Alloy that m
 
 This section will be updated with further details as the artefact evaluation progresses.
 
+---
+
+## Appendix: Installing Docker on Debian
+
+Install Docker Engine on Debian 11/12 by running the following as root:
+
+```sh
+sudo bash -c '
+apt-get update
+apt-get install -y ca-certificates curl gnupg
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+chmod a+r /etc/apt/keyrings/docker.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list
+apt-get update
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+'
+```
+
+Test that it's worked by running the `hello-world` container:
+
+```sh
+sudo docker run hello-world
+```
+
+See [Docker’s official docs](https://docs.docker.com/engine/install/debian/) for troubleshooting.
