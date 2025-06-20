@@ -1,13 +1,7 @@
 venv/
 **/.git/
 results/
-**/build/
-**/bin/
-**/linux/
-**/eclipse/
-**/jenkins/
-**/spring/
-**/hadoop/
-bdwgc/
 plots/
-build/
+artefacts/
+src/
+!src/parserbench
