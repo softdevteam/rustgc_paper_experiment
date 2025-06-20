@@ -42,16 +42,6 @@ Alternatively, you can run the experiments directly on your own system. This
 involves manually installing all required dependencies, but may yield
 more accurate benchmarking results by avoiding virtualization overhead.
 
-> [!WARNING]
-> **Platform Limitations**: Bare-metal experiments with Alloy have only been
-> tested on Linux systems with x86-64 hardware. Running bare-metal experiments
-> on macOS is not supported natively due to platform-dependent features in
-> Alloy;  macOS users must therefore use provided Docker image, but note that
-> this will be slower because it relies on QEMU-based emulation. Support for
-> other operating systems, including BSD-like platforms, is currently unknown
-> and untested. Other OSes may also require additional dependencies that we are
-> unaware of.
-
 ## Using the Docker Image (Recommended)
 
 This approach relies on a pre-built Docker image that includes all required
@@ -112,6 +102,16 @@ This method involves building all components from source within the Docker
 environment. It is recommended if you wish to fully replicate the experiments
 as described in our paper, or if you want to inspect or modify the source code
 during the process.
+
+> [!CAUTION]
+> **Platform Limitations**: Bare-metal experiments with Alloy have only been
+> tested on Linux systems with x86-64 hardware. Running bare-metal experiments
+> on macOS is not supported natively due to platform-dependent features in
+> Alloy;  macOS users must therefore use provided Docker image, but note that
+> this will be slower because it relies on QEMU-based emulation. Support for
+> other operating systems, including BSD-like platforms, is currently unknown
+> and untested. Other OSes may also require additional dependencies that we are
+> unaware of.
 
 With the Docker service running, execute the following command:
 
