@@ -43,15 +43,14 @@ involves manually installing all required dependencies, but may yield
 more accurate benchmarking results by avoiding virtualization overhead.
 
 > [!WARNING]
-> **Platform Limitations**
->
-> Bare-metal experiments with Alloy have only been tested on Linux systems with
-> x86-64 hardware. Running bare-metal experiments on macOS is not supported
-> natively due to platform-dependent features in Alloy;  macOS users must
-> therefore use provided Docker image, but note that this will be slower
-> because it relies on QEMU-based emulation. Support for other operating
-> systems, including BSD-like platforms, is currently unknown and untested.
-> Other OSes may also require additional dependencies that we are unaware of.
+> **Platform Limitations**: Bare-metal experiments with Alloy have only been
+> tested on Linux systems with x86-64 hardware. Running bare-metal experiments
+> on macOS is not supported natively due to platform-dependent features in
+> Alloy;  macOS users must therefore use provided Docker image, but note that
+> this will be slower because it relies on QEMU-based emulation. Support for
+> other operating systems, including BSD-like platforms, is currently unknown
+> and untested. Other OSes may also require additional dependencies that we are
+> unaware of.
 
 ## Using the Docker Image (Recommended)
 
