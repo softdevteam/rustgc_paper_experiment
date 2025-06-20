@@ -103,16 +103,6 @@ environment. It is recommended if you wish to fully replicate the experiments
 as described in our paper, or if you want to inspect or modify the source code
 during the process.
 
-> [!CAUTION]
-> **Platform Limitations**: Bare-metal experiments with Alloy have only been
-> tested on Linux systems with x86-64 hardware. Running bare-metal experiments
-> on macOS is not supported natively due to platform-dependent features in
-> Alloy;  macOS users must therefore use provided Docker image, but note that
-> this will be slower because it relies on QEMU-based emulation. Support for
-> other operating systems, including BSD-like platforms, is currently unknown
-> and untested. Other OSes may also require additional dependencies that we are
-> unaware of.
-
 With the Docker service running, execute the following command:
 
 ```sh
@@ -142,6 +132,16 @@ We recommend that you use the docker image as there are lots of required
 dependencies and the Dockerfile guarantees that they are pinned to the correct
 version, however, if you wish to run the experiments on your own machine you
 can do so as follows.
+
+> [!CAUTION]
+> **Platform Limitations**: Bare-metal experiments with Alloy have only been
+> tested on Linux systems with x86-64 hardware. Running bare-metal experiments
+> on macOS is not supported natively due to platform-dependent features in
+> Alloy;  macOS users must therefore use provided Docker image, but note that
+> this will be slower because it relies on QEMU-based emulation. Support for
+> other operating systems, including BSD-like platforms, is currently unknown
+> and untested. Other OSes may also require additional dependencies that we are
+> unaware of.
 
 ### System Requirements
 - 64-bit Linux (x86_64)
