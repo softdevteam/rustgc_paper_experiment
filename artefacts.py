@@ -351,11 +351,11 @@ class CustomExecutor:
 
 
 ALLOY = Artefact(
-    steps=5489,
+    steps=5907,
     repo=Repo(
         name="alloy",
-        url="https://github.com/softdevteam/alloy",
-        version="master",
+        url="https://github.com/jacob-hughes/alloy",
+        version="quickfix-stats",
     ),
 )
 
