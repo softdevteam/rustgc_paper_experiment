@@ -255,7 +255,7 @@ The same environment variables as above will also work here too.
 
 ## Customizing Experiment Runs
 
-> [!INFO]
+> [!NOTE]
 > Running the full experiment suite with all configurations, as described in our
 > paper, is a time- and resource-intensive process. On our benchmarking server
 > (64 cores, 128 GiB RAM), a complete run takes over 48 hours and consumes
