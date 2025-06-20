@@ -5,7 +5,6 @@ Finalizer Frontier"](https://arxiv.org/abs/2504.01841) by Jacob Hughes and
 Laurence Tratt. The repository for the paper can be found at
 https://github.com/softdevteam/rustgc_paper.
 
----
 
 ## Quickstart
 
@@ -29,7 +28,6 @@ and the generated plots will be available in the `plots` directory.
 For more information and alternative setup methods, please refer to the
 sections below.
 
----
 
 ## Table of Contents
 
@@ -50,7 +48,6 @@ sections below.
   - [Alloy Modifications](#alloy-modifications)
   - [Observed Differences in Results](#observed-differences-in-results)
 
----
 
 ## Reproducing our experiments
 
@@ -67,7 +64,6 @@ Alternatively, you can run the experiments directly on your own system. This
 involves manually installing all required dependencies, but may yield
 more accurate benchmarking results by avoiding virtualization overhead.
 
----
 
 ## Using the Docker Image (Recommended)
 
@@ -276,7 +272,6 @@ Once you have installed the required dependencies, you can run the experiments w
 
 The same environment variables as above will also work here too.
 
----
 
 ## Customizing Experiment Runs
 
@@ -358,7 +353,6 @@ To run the Docker prebuilt experiments with 10 process executions and only the `
 PEXECS=10 MEASUREMENTS="perf metrics" make run-quick
 ```
 
----
 
 ## Differences from Initial Submission
 
@@ -399,7 +393,6 @@ Since the original submission, we have made several improvements to Alloy that m
 
 This section will be updated with further details as the artefact evaluation progresses.
 
----
 
 ## Appendix: Installing Docker on Debian
 
