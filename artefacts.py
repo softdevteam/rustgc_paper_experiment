@@ -4,7 +4,9 @@ import shutil
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import ClassVar, Dict, Optional, Tuple
+
+import toml
 
 from util import command_runner
 
@@ -193,34 +195,73 @@ class Crate(Artefact):
 
 
 class Alloy(Artefact):
-    profile: "ExperimentProfile"
+    DEFAULT_FLAGS: ClassVar[Dict[str, bool]] = {
+        "gc-metrics": False,
+        "finalizer-safety-analysis": False,
+        "finalizer-elision": True,
+        "premature-finalizer-prevention": True,
+        "premature-finalizer-prevention-optimize": True,
+        "gc-default-allocator": True,
+    }
 
-    def __init__(self, base: Artefact, profile: "ExperimentProfile"):
+    def __init__(self, base: Artefact, profile: "ExperimentProfile", metrics=False):
         self.__dict__.update(base.__dict__)
         self.profile = profile
+        self.metrics = metrics
+        self._config = None
 
     @property
     def config(self) -> Path:
-        return (
-            Path("alloy").resolve()
-            / f"{self.profile.full.replace('-','.')}.config.toml"
-        )
+        if self._config and self._config.exists():
+            return self._config
+
+        config = {
+            "alloy": self.flags,
+            "rust": {
+                "codegen-units": 0,
+                "optimize": True,
+                "debug": False,
+            },
+            "build": {
+                "install-stage": 2,
+            },
+            "llvm": {
+                "download-ci-llvm": True,
+            },
+            "install": {
+                "sysconfdir": "etc",
+            },
+        }
+        file = self.src / f"{self.name.replace('-','.')}.config.toml"
+        with open(file, "w") as f:
+            toml.dump(config, f)
+        return file
+
+    @property
+    def flags(self):
+        return self.DEFAULT_FLAGS.copy() | (self.profile.alloy_flags or {})
+
+    @property
+    def name(self) -> str:
+        if not self.flags["gc-default-allocator"]:
+            base = "rustc-upstream"
+        elif self.flags == self.DEFAULT_FLAGS:
+            base = "default"
+        else:
+            base = self.profile.full
+        return f"{base}-metrics" if self.metrics else base
 
     @property
     def install_prefix(self) -> Path:
-        return BIN_DIR / self.repo.name / self.profile.experiment / self.profile.value
+        return BIN_DIR / self.repo.name / self.name
+
+    @property
+    def build_dir(self) -> Path:
+        return BUILD_DIR / self.repo.name / self.name
 
     @property
     def path(self) -> Path:
         return self.install_prefix / "bin" / "rustc"
-
-    @property
-    def build_dir(self) -> Path:
-        return BUILD_DIR / self.repo.name / self.profile.experiment / self.profile.value
-
-    @property
-    def name(self) -> str:
-        return f"{self.repo.name} | {self.profile.full}"
 
     @property
     def installed(self) -> bool:
@@ -304,7 +345,11 @@ class Executor(Crate):
 
     @property
     def alloy(self) -> "Alloy":
-        return self.profile.alloy()
+        from build import Metric
+
+        is_metrics = self.metric == Metric.METRICS
+
+        return Alloy(ALLOY, self.profile, is_metrics)
 
     @prepare_build
     def build(self):
