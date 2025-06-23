@@ -10,6 +10,8 @@ import toml
 
 from util import command_runner
 
+DRY_RUN = os.getenv("DRY_RUN", False)
+
 BIN_DIR = Path("artefacts/bin").resolve()
 LIB_DIR = Path("artefacts/lib").resolve()
 BUILD_DIR = Path("artefacts/build").resolve()
@@ -170,7 +172,7 @@ class Crate(Artefact):
     def cargo_toml(self):
         return f"{self.src}/Cargo.toml"
 
-    @command_runner(description="Building")
+    @command_runner(description="Building", dry_run=DRY_RUN)
     def _cargo_build(self):
         return [
             "cargo",
@@ -267,7 +269,7 @@ class Alloy(Artefact):
     def installed(self) -> bool:
         return self.path.exists()
 
-    @command_runner(description="Building")
+    @command_runner(dry_run=DRY_RUN)
     def _xpy_install(self):
         return [
             f"{self.src}/x.py",

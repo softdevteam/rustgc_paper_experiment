@@ -55,12 +55,13 @@ class CommandError(Exception):
 
 
 def command_runner(
-    description=None,
+    description="",
     write_progress=True,
     unit="objects",
     steps=None,
     verbose=False,
     allow_failure=True,
+    dry_run=False,
 ):
 
     def decorator(method):
@@ -70,7 +71,10 @@ def command_runner(
             cmd = method(self, *args, **kwargs)
             desc = f"{description} {self.name}"
             with _temp_log_format(logger):
-                logger.info(f"\n[RUNNING COMMAND]\n")
+                if dry_run:
+                    logger.info(f"\n[DRY RUN]\n")
+                else:
+                    logger.info(f"\n[RUNNING COMMAND]\n")
                 if hasattr(self, "env"):
                     for key, value in self.env.items():
                         logging.info(f"{key}={value}")
@@ -86,6 +90,9 @@ def command_runner(
                 if getattr(self, "steps", False)
                 else "{desc}:{percentage:3.0f}%"
             )
+
+            if dry_run:
+                return wrapper
 
             with subprocess.Popen(
                 cmd,
@@ -113,8 +120,6 @@ def command_runner(
                         pbar.update(1)
                         update_timer(1)
             pbar.close()
-            if write_progress:
-                tqdm.write(f"✔ {desc}")
             if not allow_failure and proc.returncode != 0:
                 raise CommandError(desc, "\n".join(buffer))
 
