@@ -1,0 +1,64 @@
+name: Alloy Experiments CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  bare-metal-debian:
+    name: Bare Metal (Debian)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Install dependencies
+        run: ./install_deps.sh --no-cpu-gov
+      - name: Run bare-metal build
+        run: make bare-metal
+
+  bare-metal-arch:
+    name: Bare Metal (Arch Linux)
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base
+      options: --privileged
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Install sudo
+        run: pacman -Sy --noconfirm sudo
+      - name: Install dependencies
+        run: ./install_deps.sh --no-cpu-gov
+      - name: Run bare-metal build
+        run: make bare-metal
+
+  docker-quick:
+    name: Docker Quick Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and run quick container
+        run: |
+          make run-quick
+
+  docker-full:
+    name: Docker Full Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and run full container
+        run: |
+          make run-full
+
