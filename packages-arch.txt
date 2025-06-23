@@ -25,7 +25,7 @@ ninja
 pkgconf
 pipx
 procps-ng
-python
+python-pipx
 rsync
 xorg-server-xvfb
 zlib
