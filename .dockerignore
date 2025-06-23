@@ -5,3 +5,4 @@ plots/
 artefacts/
 src/
 !src/parserbench
+!artefacts/prebuilt

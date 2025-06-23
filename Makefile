@@ -32,14 +32,13 @@ run-quick: fetch-binaries
 	docker buildx build \
 		--target runtime \
 		--tag $(IMAGE_quick) \
-		--build-arg PREBUILT_BINS=true \
+		--build-arg QUICK_BUILD=true \
 		--load .
 	@test -f $(LOGFILE) || touch $(LOGFILE)
 	chmod a+w $(LOGFILE)
 	docker run --rm -it \
 		--mount type=bind,source="$(LOGFILE)",target=/app/experiment.log \
 		--mount type=bind,source="$(RESULTS)",target=/app/results \
-		--mount type=bind,source="$(PREBUILT_BIN)",target=/app/artefacts/bin \
 		$(IMAGE_quick)
 
 run-full:

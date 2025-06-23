@@ -7,7 +7,8 @@ FROM base as build
 WORKDIR /app
 
 # Add build argument for prebuilt binaries
-ARG PREBUILT_BINS=false
+ARG BUILD_QUICK=false
+ENV BUILD_QUICK=${BUILD_QUICK}
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
@@ -42,13 +43,15 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip --break-system-packages && \
     pip install .[dev] --break-system-packages
 
+RUN mkdir -p /app/artefacts
+
 COPY . .
 
-RUN --mount=type=cache,target=/app/artefacts \
-    if [ "$PREBUILT_BINS" = "false" ]; then \
+RUN if [ "$BUILD_QUICK" = "false" ]; then \
     invoke build-benchmarks; \
     else \
     echo "Using prebuilt binaries"; \
+    cp -r ./artefacts/prebuilt /app/artefacts/; \
     fi
 
 
