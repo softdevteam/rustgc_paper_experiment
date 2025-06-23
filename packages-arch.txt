@@ -1,5 +1,5 @@
-autoconf            # Part of base-devel
-automake            # Part of base-devel
+autoconf
+automake
 bison
 clang
 cmake
@@ -14,19 +14,19 @@ boost-libs
 libdwarf
 libedit
 libffi
-xz                  # Provides liblzma
+xz
 openssl
-ncurses             # Provides libtinfo
+ncurses
 libunwind
 libzip
 llvm
-make                # Part of base-devel
+make
 ninja
-pkgconf             # pkg-config equivalent
+pkgconf
 pipx
-procps-ng           # procps equivalent
+procps-ng
 python
 rsync
-xorg-server-xvfb    # xvfb
+xorg-server-xvfb
 zlib
 zstd
