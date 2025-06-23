@@ -45,7 +45,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 COPY . .
 
 RUN --mount=type=cache,target=/app/artefacts \
-    if [ "$USE_PREBUILT_BINARIES" = "false" ]; then \
+    if [ "$PREBUILT_BINS" = "false" ]; then \
     invoke build-benchmarks; \
     else \
     echo "Using prebuilt binaries"; \
