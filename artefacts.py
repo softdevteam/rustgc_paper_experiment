@@ -126,9 +126,6 @@ class Artefact:
     steps: Optional[int] = 0
     _src: Optional[Path] = None
 
-    def __hash__(self) -> int:
-        return hash(self.path)
-
     @property
     def name(self) -> str:
         return self._name or self.repo.name
@@ -196,6 +193,16 @@ class Crate(Artefact):
                 os.symlink(f, self.bin / f.name)
 
 
+ALLOY = Artefact(
+    steps=5907,
+    repo=Repo(
+        name="alloy",
+        url="https://github.com/jacob-hughes/alloy",
+        version="quickfix-stats",
+    ),
+)
+
+
 class Alloy(Artefact):
     DEFAULT_FLAGS: ClassVar[Dict[str, bool]] = {
         "gc-metrics": False,
@@ -206,8 +213,8 @@ class Alloy(Artefact):
         "gc-default-allocator": True,
     }
 
-    def __init__(self, base: Artefact, profile: "ExperimentProfile", metrics=False):
-        self.__dict__.update(base.__dict__)
+    def __init__(self, profile: "ExperimentProfile", metrics=False):
+        self.__dict__.update(ALLOY.__dict__)
         self.profile = profile
         self.metrics = metrics
         self._config = None
@@ -293,84 +300,6 @@ class Alloy(Artefact):
         self._xpy_install()
 
 
-class Executor(Crate):
-    suite: "BenchmarkSuite"
-    metric: "Metric"
-    profile: "ExperimentProfile"
-    experiment: "Experiment"
-
-    def __init__(self, suite, metric, profile, experiment):
-        self.__dict__.update(suite.crate.__dict__)
-        self.suite = suite
-        self.metric = metric
-        self.profile = profile
-        self.experiment = experiment
-
-    def __repr__(self):
-        return self.profile.value
-
-    def __hash__(self) -> int:
-        return hash(self.name)
-
-    def __lt__(self, other):
-        return self.name < other.name
-
-    @property
-    def name(self) -> str:
-        return f"{self.suite.name}-{self.profile.full}-{self.metric.value}"
-
-    @property
-    def install_prefix(self) -> Path:
-        return BIN_DIR / self.metric.value / "benchmarks" / self.profile.path
-
-    @property
-    def path(self) -> Path:
-        return self.install_prefix / self.suite.name
-
-    @property
-    def stats_dir(self) -> Path:
-        return self.experiment.results.parent / "stats" / self.suite.name
-
-    @property
-    def build_dir(self) -> Path:
-        return (
-            BUILD_DIR
-            / self.metric.value
-            / "benchmarks"
-            / self.profile.path
-            / self.repo.name
-        )
-
-    @property
-    def env(self):
-        return {"RUSTC": self.alloy.path}
-
-    @property
-    def alloy(self) -> "Alloy":
-        from build import Metric
-
-        is_metrics = self.metric == Metric.METRICS
-
-        return Alloy(ALLOY, self.profile, is_metrics)
-
-    @prepare_build
-    def build(self):
-        for lib in self.suite.deps:
-            if lib.repo:
-                lib.repo.fetch()
-
-        with ExitStack() as patchstack:
-            crates = self.suite.deps + [self]
-            [patchstack.enter_context(c.repo.patch(self.profile)) for c in crates]
-            self._cargo_build()
-            target_bin = self.build_dir / "release" / super().name
-            if not target_bin.exists():
-                print(target_bin)
-                raise BuildError(f"Build target does not exist")
-            logging.info(f"Symlinking {target_bin} -> {self.path}")
-            os.symlink(target_bin, self.path)
-
-
 @dataclass
 class CustomExecutor:
     experiment: "Experiment"
@@ -395,16 +324,6 @@ class CustomExecutor:
                 if cfg.name != self.name
             )
         return None
-
-
-ALLOY = Artefact(
-    steps=5907,
-    repo=Repo(
-        name="alloy",
-        url="https://github.com/jacob-hughes/alloy",
-        version="quickfix-stats",
-    ),
-)
 
 
 # BENCHMARKS

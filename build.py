@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass
 from enum import Enum, auto
 from itertools import product
 from pathlib import Path
-from typing import Any, Dict, List, NamedTuple, Optional
+from typing import Any, Dict, List, NamedTuple, Optional, Set
 
 import yaml
 
@@ -30,6 +30,7 @@ REBENCH_EXEC = Path(".venv/bin/rebench").resolve()
 REBENCH_CONF = Path("rebench.conf").resolve()
 RESULTS_DIR = Path("results").resolve()
 DEFAULT_PEXECS = 30
+PEXECS = 30
 DEFAULT_MEASUREMENTS = ["perf"]
 
 
@@ -78,6 +79,14 @@ class ExperimentProfile(Enum):
         exp = self.name.lower()
         return Path(self.experiment) / Path(exp)
 
+    @classmethod
+    def experiments(cls, pexecs=DEFAULT_PEXECS) -> List["Experiment"]:
+        return [
+            Experiment(list(set(cls) & set(suite.profiles)), m, suite, pexecs)
+            for suite in BenchmarkSuite.all()
+            for m in cls.measurements
+        ]
+
 
 class GCVS(ExperimentProfile):
     GC = ("gc", "Alloy")
@@ -88,14 +97,9 @@ class GCVS(ExperimentProfile):
     RUST_GC = ("rust-gc", "Rust-GC")
 
     @classmethod
-    def experiments(cls, pexecs=DEFAULT_PEXECS) -> List["Experiments"]:
-        measurements = [Metric.PERF]
-
-        return [
-            Experiment(list(cls), m, b, pexecs)
-            for b in BenchmarkSuite.all()
-            for m in measurements
-        ]
+    @property
+    def measurements(cls):
+        return [Metric.PERF]
 
 
 class PremOpt(ExperimentProfile):
@@ -115,14 +119,9 @@ class PremOpt(ExperimentProfile):
     )
 
     @classmethod
-    def experiments(cls, pexecs=DEFAULT_PEXECS) -> List["Experiment"]:
-        measurements = [Metric.PERF, Metric.METRICS]
-
-        return [
-            Experiment(list(cls), m, b, pexecs)
-            for b in BenchmarkSuite.all()
-            for m in measurements
-        ]
+    @property
+    def measurements(cls):
+        return [Metric.PERF, Metric.METRICS]
 
 
 class Elision(ExperimentProfile):
@@ -130,25 +129,21 @@ class Elision(ExperimentProfile):
     OPT = ("opt", "Elision")
 
     @classmethod
-    def experiments(cls, pexecs=DEFAULT_PEXECS) -> List["Experiment"]:
-        measurements = [Metric.PERF, Metric.METRICS]
-
-        return [
-            Experiment(list(cls), m, b, pexecs)
-            for b in BenchmarkSuite.all()
-            for m in measurements
-        ]
+    @property
+    def measurements(cls):
+        return [Metric.PERF, Metric.METRICS]
 
 
-class BenchmarkSuite(NamedTuple):
+@dataclass(frozen=True)
+class BenchmarkSuite:
     name: str
     crate: Crate
     cmd_args: str
-    benchmarks: List["Benchmark"]
-    gcvs: Optional[List[ExperimentProfile]] = None
-    deps: Optional[List[Crate]] = []
-    setup: Optional[List[str]] = None
-    teardown: Optional[List[str]] = None
+    benchmarks: Tuple["Benchmark"]
+    gcvs: Optional[Tuple[ExperimentProfile]] = None
+    deps: Optional[Tuple[Crate]] = ()
+    setup: Optional[Tuple[str]] = None
+    teardown: Optional[Tuple[str]] = None
 
     @property
     def path(self) -> Path:
@@ -163,51 +158,56 @@ class BenchmarkSuite(NamedTuple):
         return self.cmd_args
 
     @property
-    def profiles(self) -> List[ExperimentProfile]:
-        p = list(PremOpt) + list(Elision)
+    def profiles(self) -> tuple[ExperimentProfile]:
+        p = tuple(PremOpt) + tuple(Elision)
         if self.gcvs:
-            p.extend(self.gcvs + [GCVS.BASELINE, GCVS.GC])
+            # self.gcvs is probably a set or list; convert to tuple for concatenation
+            p = p + self.gcvs + (GCVS.BASELINE, GCVS.GC)
         return p
 
     @classmethod
-    def all(cls) -> List["BenchmarkSuite"]:
-        return [
-            BenchmarkSuite(
-                "alacritty",
-                ALACRITTY,
-                benchmarks.ALACRITTY_ARGS,
-                benchmarks.ALACRITTY,
-                [GCVS.ARC],
-                deps=[VTE_BENCH],
-                setup=[
-                    "Xvfb",
-                    ":99",
-                    "-screen",
-                    "0",
-                    "1280x800x24",
-                    "-nolisten",
-                    "tcp",
-                ],
-                teardown=True,
-            ),
+    def all(cls) -> Set["BenchmarkSuite"]:
+        return {
+            # BenchmarkSuite(
+            #     "alacritty",
+            #     ALACRITTY,
+            #     benchmarks.ALACRITTY_ARGS,
+            #     benchmarks.ALACRITTY,
+            #     [GCVS.ARC],
+            #     deps=[VTE_BENCH],
+            #     setup=[
+            #         "Xvfb",
+            #         ":99",
+            #         "-screen",
+            #         "0",
+            #         "1280x800x24",
+            #         "-nolisten",
+            #         "tcp",
+            #     ],
+            #     teardown=True,
+            # ),
             # BenchmarkSuite(
             #     "fd", FD, benchmarks.FD_ARGS, benchmarks.FD, [GCVS.ARC], deps=[LINUX]
             # ),
             # BenchmarkSuite(RIPGREP, [GCVS.ARC], "ripgrep"),
             BenchmarkSuite(
-                "som-rs-ast", SOMRS_BC, benchmarks.SOMRS_ARGS, benchmarks.SOM, [GCVS.RC]
+                "som-rs-ast",
+                SOMRS_AST,
+                benchmarks.SOMRS_ARGS,
+                benchmarks.SOM,
+                (GCVS.RC,),
             ),
             BenchmarkSuite(
-                "som-rs-bc", SOMRS_AST, benchmarks.SOMRS_ARGS, benchmarks.SOM, [GCVS.RC]
+                "som-rs-bc", SOMRS_BC, benchmarks.SOMRS_ARGS, benchmarks.SOM, (GCVS.RC,)
             ),
-            BenchmarkSuite("yksom", YKSOM, benchmarks.YKSOM_ARGS, benchmarks.SOM),
+            # BenchmarkSuite("yksom", YKSOM, benchmarks.YKSOM_ARGS, benchmarks.SOM),
             # BenchmarkSuite(
             #     "grmtools",
             #     PARSER_BENCH,
             #     [GCVS.RC],
             #     deps=[GRMTOOLS, CACTUS, REGEX],
             # ),
-        ]
+        }
 
 
 @dataclass
@@ -294,24 +294,66 @@ class Experiment:
     def name(self) -> str:
         return f"{self.suite.name}-{self.experiment}-{self.measurement.value}"
 
-    def configurations(
-        self, only_installed=False, only_missing=False
-    ) -> List["Executor"]:
-        if only_installed and only_missing:
-            raise ValueError("Can't select both only_installed and only_missing")
-        intersection = set(self.profiles) & set(self.suite.profiles)
-        cfgs = (Executor(self.suite, self.measurement, p, self) for p in intersection)
-
-        if only_installed:
-            cfgs = filter(lambda e: e.installed, cfgs)
-        elif only_missing:
-            cfgs = filter(lambda e: not e.installed, cfgs)
-
-        return list(cfgs)
-
     @property
     def build_steps(self) -> int:
         return sum([cfg.steps for cfg in self.configurations(only_missing=True)])
+
+
+@dataclass(frozen=True)
+class Executor:
+    suite: "BenchmarkSuite"
+    metric: "Metric"
+    id: str
+    alloy: Alloy
+
+    @property
+    def name(self):
+        is_metrics = self.metric == Metric.METRICS
+        base = f"{self.suite.name}-{self.id}"
+        return f"{base}-metrics" if is_metrics else base
+
+    def __repr__(self):
+        return self.name
+
+    def __lt__(self, other):
+        return self.name < other.name
+
+    @property
+    def install_prefix(self) -> Path:
+        return BIN_DIR / "benchmarks" / self.suite.name
+
+    @property
+    def path(self) -> Path:
+        return self.install_prefix / self.suffix
+
+    @property
+    def stats_dir(self) -> Path:
+        return self.experiment.results.parent / "stats" / self.suite.name
+
+    @property
+    def build_dir(self) -> Path:
+        return BUILD_DIR / "benchmarks" / self.suite.name / self.suffix
+
+    @property
+    def env(self):
+        return {"RUSTC": self.alloy.path}
+
+    @prepare_build
+    def build(self):
+        for lib in self.suite.deps:
+            if lib.repo:
+                lib.repo.fetch()
+
+        with ExitStack() as patchstack:
+            crates = self.suite.deps + [self]
+            [patchstack.enter_context(c.repo.patch(self.profile)) for c in crates]
+            self._cargo_build()
+            target_bin = self.build_dir / "release" / super().name
+            if not target_bin.exists():
+                print(target_bin)
+                raise BuildError(f"Build target does not exist")
+            logging.info(f"Symlinking {target_bin} -> {self.path}")
+            os.symlink(target_bin, self.path)
 
 
 class CustomExperiment(Experiment):
@@ -353,38 +395,17 @@ class Experiments:
     experiments: List[Experiment]
     _config: Optional[Path] = None
 
-    # @classmethod
-    # def from_custom(cls, experiments, pexecs=0):
-    #     return cls(
-    #         experiments=experiments,
-    #     )
-
-    @staticmethod
-    def new(pexecs=0, benchmarks=None, profiles=None, metrics=None):
-        profiles = profiles or [GCVS, PremOpt, Elision]
-        exps = [exp for p in profiles for exp in p.experiments(pexecs)]
-        return Experiments(list(filter(lambda e: e.configurations(), exps)))
-
-    @property
-    def all(self) -> List["Experiment"]:
-        return self.experiments
-
-    def filter_suites(self, suites):
-        self.experiments = list(
-            filter(lambda e: e.suite.name in suites, self.experiments)
-        )
-        return self
-
-    def filter_experiments(self, experiments):
-        self.experiments = list(
-            filter(lambda e: e.experiment in experiments, self.experiments)
-        )
-        return self
-
-    def filter_metric(self, metric):
-        self.experiments = list(
-            filter(lambda e: e.metric.name.lower() == metric, self.experiments)
-        )
+    def filter(self, *, suites=None, experiments=None, measurements=None):
+        if suites is not None:
+            self.experiments = [e for e in self.experiments if e.suite.name in suites]
+        if experiments is not None:
+            self.experiments = [
+                e for e in self.experiments if e.experiment in experiments
+            ]
+        if measurements is not None:
+            self.experiments = [
+                e for e in self.experiments if e.measurement.value in measurements
+            ]
         return self
 
     def run(self, c, pexecs):
@@ -398,6 +419,14 @@ class Experiments:
     def remove(self):
         for e in self.experiments:
             e.results.unlink(missing_ok=True)
+
+    def alloy_variants(self, only_installed=False, only_missing=False):
+        l = [cfg.alloy for cfg in self.configurations()]
+        if only_installed:
+            l = [a for a in l if a.installed]
+        elif only_missing:
+            l = [a for a in l if not a.installed]
+        return list({a.name: a for a in l}.values())
 
     @property
     def config(self) -> Path:
@@ -419,10 +448,6 @@ class Experiments:
                 exec_part[cfg.name] = {
                     "path": str(cfg.install_prefix),
                     "executable": cfg.path.name,
-                    "env": {
-                        "GC_PRINT_STATS": "true",
-                        "GC_LOG_DIR": str(cfg.gc_log_dir),
-                    },
                 }
 
             bm_part[e.suite.name] = {
@@ -466,11 +491,22 @@ class Experiments:
         if only_installed and only_missing:
             raise ValueError("Can't select both only_installed and only_missing")
 
-        cfgs = []
-        for e in self.experiments:
-            cfgs.extend(e.configurations(only_installed, only_missing))
+        identical = [GCVS.GC, PremOpt.OPT, Elision.OPT]
 
-        return cfgs
+        executors = set()
+        for e in self.experiments:
+            for p in e.profiles:
+                name = "default" if p in identical else p.full
+                is_metrics = e.measurement == Metric.METRICS
+                alloy = Alloy(p, metrics=is_metrics)
+                executors.add(Executor(e.suite, e.measurement, name, alloy))
+
+        return executors
+
+    @classmethod
+    def all(cls, pexecs: int = 30) -> "Experiments":
+        profiles = [GCVS, PremOpt, Elision]
+        return cls([e for p in profiles for e in p.experiments(pexecs)])
 
 
 @dataclass
