@@ -1,0 +1,32 @@
+autoconf            # Part of base-devel
+automake            # Part of base-devel
+bison
+clang
+cmake
+curl
+elfutils
+flex
+gdb
+git
+gperf
+boost
+boost-libs
+libdwarf
+libedit
+libffi
+xz                  # Provides liblzma
+openssl
+ncurses             # Provides libtinfo
+libunwind
+libzip
+llvm
+make                # Part of base-devel
+ninja
+pkgconf             # pkg-config equivalent
+pipx
+procps-ng           # procps equivalent
+python
+rsync
+xorg-server-xvfb    # xvfb
+zlib
+zstd
