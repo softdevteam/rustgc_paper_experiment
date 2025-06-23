@@ -22,6 +22,17 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1 && \
     update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
 
+# Set environment variables for Rust and Cargo
+ENV CARGO_HOME=/cargo
+ENV RUSTUP_HOME=/rustup
+ENV PATH=$CARGO_HOME/bin:$PATH
+
+# Install rustup and Rust nightly toolchain
+RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly
+
+# Show versions for debugging
+RUN rustc --version && cargo --version
+
 COPY pyproject.toml ./
 
 RUN --mount=type=cache,target=/root/.cache/pip \
