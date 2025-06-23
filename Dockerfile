@@ -6,6 +6,9 @@ FROM debian:latest as base
 FROM base as build
 WORKDIR /app
 
+# Add build argument for prebuilt binaries
+ARG PREBUILT_BINS=false
+
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
@@ -42,7 +45,12 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 COPY . .
 
 RUN --mount=type=cache,target=/app/artefacts \
-    invoke build-benchmarks
+    if [ "$USE_PREBUILT_BINARIES" = "false" ]; then \
+    invoke build-benchmarks; \
+    else \
+    echo "Using prebuilt binaries"; \
+    fi
+
 
 FROM scratch as log_export
 COPY --from=build /app/experiment.log /docker-run-full.log
