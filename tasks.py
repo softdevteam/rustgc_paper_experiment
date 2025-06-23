@@ -2,77 +2,68 @@ import os
 
 from invoke import task
 
-from build import (
-    DEFAULT_MEASUREMENTS,
-    GCVS,
-    BenchmarkSuite,
-    CustomExperiment,
-    Elision,
-    Experiments,
-    Metric,
-    PremOpt,
-)
+from build import BenchmarkSuite, CustomExperiment, Experiments, Metric
 from util import timer
 
-EXPERIMENTS = "gcvs premopt elision"
-PROFILES = {"gcvs": GCVS, "premopt": PremOpt, "elision": Elision}
+
+def _parse_args(pexecs, exps=None, suites=None, measurements=None):
+    def _to_list(val):
+        return val.split() if isinstance(val, str) else val
+
+    return Experiments.all(pexecs).filter(
+        experiments=_to_list(exps),
+        suites=_to_list(suites),
+        measurements=_to_list(measurements),
+    )
 
 
 def _build_alloy(experiments: "Experiments", warn_if_empty=False):
-    cfgs = experiments.configurations(only_missing=True)
-    alloy_cfgs_needed = set(cfg.alloy for cfg in cfgs if not cfg.alloy.installed)
-    alloy_build_steps = sum(a.steps for a in alloy_cfgs_needed)
-    if not alloy_cfgs_needed and warn_if_empty:
-        print("Nothing to do")
+    cfgs = experiments.alloy_variants(only_missing=True)
+    if not cfgs:
+        if warn_if_empty:
+            print("Nothing to do")
+        return
 
-    print(f"Found {len(alloy_cfgs_needed)} Alloy configuration(s):")
-    [print(f"  {os.path.relpath(a.path)}") for a in alloy_cfgs_needed]
-    with timer("Building missing alloy configurations", alloy_build_steps):
-        for alloy in alloy_cfgs_needed:
-            alloy.build()
+    print(
+        f"{len(cfgs)} Alloy variant(s) require installing for {len(experiments.experiments)} experiment(s):"
+    )
+    [print(f"  {a.name}") for a in cfgs]
+    with timer("Building", sum(a.steps for a in cfgs)):
+        for a in cfgs:
+            a.build()
 
 
 @task
-def build_alloy(c, experiments=EXPERIMENTS):
+def build_alloy(c, experiments=None, measurements=None):
     """Build all alloy configurations"""
-    exps = Experiments(
-        [exp for e in experiments.split() for exp in PROFILES[e].experiments()]
-    )
+    exps = _parse_args(pexecs=0, exps=experiments, measurements=measurements)
     _build_alloy(exps, warn_if_empty=True)
 
 
 @task
-def build_benchmarks(c, experiments=None, suites=None):
+def build_benchmarks(c, experiments=None, suites=None, measurements=None):
     """Build all benchmarks for all configurations"""
-
-    exps = Experiments(
-        [exp for e in experiments.split() for exp in PROFILES[e].experiments()]
+    exps = _parse_args(
+        pexecs=0, exps=experiments, suites=suites, measurements=measurements
     )
-    if experiments:
-        exps = exps.filter_experiments(suites)
-    if suites:
-        exps = exps.filter_suites(suites)
-
     _build_alloy(exps)
 
     cfgs = exps.configurations(only_missing=True)
+    if not cfgs:
+        print("Nothing to do")
+        return
+    print(f"Found {len(cfgs)} benchmark configuration(s):")
+    [print(f"  {cfg.cfg_name}") for cfg in cfgs]
     with timer("Building benchmark configurations", exps.build_steps):
         for cfg in cfgs:
             cfg.build()
 
 
 @task
-def run_benchmarks(c, pexecs, experiments=None, suites=None, metric=None):
-    pexecs = int(pexecs)
-    exps = Experiments.new(pexecs)
-    if suites:
-        exps = exps.filter_suites(suites)
-
-    if experiments:
-        exps = exps.filter_experiments(experiments)
-
-    if metric:
-        exps = exps.filter_metric(metric)
+def run_benchmarks(c, pexecs, experiments=None, suites=None, measurements=None):
+    exps = _parse_args(
+        int(pexecs), exps=experiments, suites=suites, measurements=measurements
+    )
 
     total_iters = exps.run_steps
 
