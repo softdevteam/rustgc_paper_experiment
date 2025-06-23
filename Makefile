@@ -1,29 +1,70 @@
 CURDIR ?= $(shell pwd)
+EXPERIMENTS ?= gcvs premopt elision
+MEASUREMENTS ?= perf mem metrics
 
-export EXPERIMENTS ?= gcvs premopt elision
-export MEASUREMENTS ?= perf mem metrics
-
-IMAGE_NAME := run-full:latest
+IMAGE_full := full:latest
+IMAGE_quick := quick:latest
 LOG_STAGE := log_export
 RUNTIME_STAGE := runtime
-RESULTS := $(PWD)/results
+RESULTS := $(CURDIR)/results
+LOGFILE := experiment.log
 
-build:
+VENV_DIR := .venv
+VENV_PYTHON := $(VENV_DIR)/bin/python
+PYTHON := $(VENV_PYTHON)  # Use venv python consistently
+
+BIN_DIR ?= $(CURDIR)/artefacts/bin
+BIN_ARCHIVE ?= artefacts-bin.tar.xz
+PREBUILT_DIR := $(CURDIR)/artefacts/prebuilt
+PREBUILT_BIN := $(PREBUILT_DIR)/bin  # Added definition
+
+GDRIVE_FILE_ID = 1oDkZ2RH65iq25_65AppzdLH_zzbt6oRz
+GDRIVE_ARTEFACT = $(PREBUILT_DIR)/$(BIN_ARCHIVE)
+
+.PHONY: venv run-full run-quick fetch-binaries bare-metal
+
+venv:
+	@test -d $(VENV_DIR) || python3 -m venv $(VENV_DIR)
+	$(PYTHON) -m pip install --upgrade pip
+	$(PYTHON) -m pip install .
+
+run-quick: fetch-binaries
 	docker buildx build \
-		--target $(RUNTIME_STAGE) \
-		--tag $(IMAGE_NAME) \
+		--target runtime \
+		--tag $(IMAGE_quick) \
+		--build-arg PREBUILT_BINS=true \
 		--load .
-	docker buildx build \
-		--target $(LOG_STAGE) \
-		--output type=local,dest=$(CURDIR) .
-
-run-full: build
-	touch $(CURDIR)/docker-run-full.log
-	chmod a+w $(CURDIR)/docker-run-full.log
+	@test -f $(LOGFILE) || touch $(LOGFILE)
+	chmod a+w $(LOGFILE)
 	docker run --rm -it \
-		--mount type=bind,source="$(CURDIR)/docker-run-full.log",target=/app/experiment.log \
-		--mount type=bind,source="$(CURDIR)/results",target=/app/results \
-		$(if $(PEXECS),--env PEXECS="$(PEXECS)",) \
-		--env EXPERIMENTS="$(EXPERIMENTS)" \
-		--env MEASUREMENTS="$(MEASUREMENTS)" \
-		$(IMAGE_NAME)
+		--mount type=bind,source="$(LOGFILE)",target=/app/experiment.log \
+		--mount type=bind,source="$(RESULTS)",target=/app/results \
+		--mount type=bind,source="$(PREBUILT_BIN)",target=/app/artefacts/bin \
+		$(IMAGE_quick)
+
+run-full:
+	docker buildx build --target runtime --tag $(IMAGE_full) --load .
+	@test -f $(LOGFILE) || touch $(LOGFILE)
+	chmod a+w $(LOGFILE)
+	docker run --rm -it \
+		--mount type=bind,source="$(LOGFILE)",target=/app/experiment.log \
+		--mount type=bind,source="$(RESULTS)",target=/app/results \
+		$(IMAGE_full)
+
+tarball:
+	@echo "Compressing $(BIN_DIR) with maximum compression..."
+	cd artefacts && tar -cf - bin | xz -9e > $(BIN_ARCHIVE)
+	@echo "Created $(BIN_ARCHIVE) ($$(du -h artefacts/$(BIN_ARCHIVE) | cut -f1))"
+
+fetch-binaries: venv
+	@mkdir -p $(PREBUILT_DIR)
+	@echo "Downloading from Google Drive..."
+	@gdown $(GDRIVE_FILE_ID) -O $(GDRIVE_ARTEFACT)
+	@echo "Download complete. File size: $$(du -h $(GDRIVE_ARTEFACT) | cut -f1)"
+	@echo "Unzipping $(GDRIVE_ARTEFACT) to $(PREBUILT_DIR)..."
+	tar -xvf $(GDRIVE_ARTEFACT) -C $(PREBUILT_DIR)  # Fixed typo
+	@echo "Done"
+
+bare-metal: venv
+	./run build-benchmarks
+
