@@ -6,9 +6,17 @@ FROM debian:latest as base
 FROM base as build
 WORKDIR /app
 
-# Add build argument for prebuilt binaries
 ARG BUILD_QUICK=false
-ENV BUILD_QUICK=${BUILD_QUICK}
+ARG PEXECS
+ARG EXPERIMENTS
+ARG SUITES
+ARG MEASUREMENTS
+
+ENV BUILD_QUICK=$BUILD_QUICK
+ENV PEXECS=$PEXECS
+ENV EXPERIMENTS=$EXPERIMENTS
+ENV SUITES=$SUITES
+ENV MEASUREMENTS=$MEASUREMENTS
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
@@ -48,7 +56,7 @@ RUN mkdir -p /app/artefacts
 COPY . .
 
 RUN if [ "$BUILD_QUICK" = "false" ]; then \
-    invoke build-benchmarks; \
+    invoke build-alloy $EXPERIMENTS $MEASUREMENTS; \
     else \
     echo "Using prebuilt binaries"; \
     cp -r ./artefacts/prebuilt /app/artefacts/; \
@@ -62,8 +70,5 @@ FROM debian:latest as runtime
 WORKDIR /app
 COPY --from=build /app/artefacts /app/artefacts
 
-CMD invoke run-benchmarks $PEXECS \
-    --experiments=$EXPERIMENTS \
-    --suites=$SUITES \
-    --metrics=$MEASUREMENTS
+CMD invoke run-benchmarks $PEXECS $EXPERIMENTS $SUITES $MEASUREMENTS
 

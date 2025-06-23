@@ -1,6 +1,4 @@
 CURDIR ?= $(shell pwd)
-EXPERIMENTS ?= gcvs premopt elision
-MEASUREMENTS ?= perf mem metrics
 
 IMAGE_full := full:latest
 IMAGE_quick := quick:latest
@@ -32,7 +30,7 @@ run-quick: fetch-binaries
 	docker buildx build \
 		--target runtime \
 		--tag $(IMAGE_quick) \
-		--build-arg QUICK_BUILD=true \
+		--build-arg BUILD_QUICK=true \
 		--load .
 	@test -f $(LOGFILE) || touch $(LOGFILE)
 	chmod a+w $(LOGFILE)
@@ -42,7 +40,13 @@ run-quick: fetch-binaries
 		$(IMAGE_quick)
 
 run-full:
-	docker buildx build --target runtime --tag $(IMAGE_full) --load .
+	docker buildx build \
+		--build-arg $(if $(EXPERIMENTS),EXPERIMENTS="--experiments $(EXPERIMENTS))" \
+		--build-arg $(if $(SUITES),SUITES="--suites $(SUITES))" \
+		--build-arg $(if $(MEASUREMENTS),MEASUREMENTS="--measurements $(MEASUREMENTS))" \
+		--target runtime \
+		--tag $(IMAGE_full) \
+		--load .
 	@test -f $(LOGFILE) || touch $(LOGFILE)
 	chmod a+w $(LOGFILE)
 	docker run --rm -it \
@@ -65,5 +69,8 @@ fetch-binaries: venv
 	@echo "Done"
 
 bare-metal: venv
-	./run build-benchmarks
+	@./run build-alloy \
+		$(if $(EXPERIMENTS),--experiments $(EXPERIMENTS)) \
+		$(if $(SUITES),--suites $(SUITES)) \
+		$(if $(MEASUREMENTS),--measurements $(MEASUREMENTS))
 
