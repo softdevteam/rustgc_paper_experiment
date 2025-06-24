@@ -71,16 +71,13 @@ class Repo:
         self._checkout()
 
     @contextmanager
-    def patch(self, profile: "ExperimentProfile"):
-        from build import GCVS
-
+    def patch(self, suffix: Optional[str]):
         self._reset()
-        profile = GCVS.GC.value if not isinstance(profile, GCVS) else profile.value
-        diff = PATCH_DIR / f"{self.name}.{profile}.diff"
-        if diff.exists():
-            self._patch(diff)
+        if suffix:
+            patch = PATCH_DIR / f"{self.name}.{suffix}.diff"
+            self._patch(patch)
         else:
-            logging.info(f"No patch applied for {self.name} ({profile})")
+            logging.info(f"No patch applied for {self.name}")
         yield
         self._reset()
 

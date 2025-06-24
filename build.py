@@ -324,7 +324,7 @@ class Executor:
 
     @property
     def path(self) -> Path:
-        return self.install_prefix / self.suffix
+        return self.install_prefix / self.id
 
     @property
     def stats_dir(self) -> Path:
@@ -332,28 +332,70 @@ class Executor:
 
     @property
     def build_dir(self) -> Path:
-        return BUILD_DIR / "benchmarks" / self.suite.name / self.suffix
+        return BUILD_DIR / "benchmarks" / self.suite.name / self.id
+
+    @property
+    def installed(self) -> bool:
+        return self.path.exists()
+
+    @property
+    def patch_suffix(self) -> Optional[str]:
+        if self.alloy.profile == GCVS.BASELINE:
+            return None
+        elif self.alloy.profile in [PremOpt.NAIVE, PremOpt.NONE, Elision.NAIVE]:
+            return "gc"
+        else:
+            return self.alloy.profile.value
 
     @property
     def env(self):
         return {"RUSTC": self.alloy.path}
 
-    @prepare_build
+    @command_runner(description="Building", dry_run=DRY_RUN)
+    def _cargo_build(self):
+        return [
+            "cargo",
+            "build",
+            "--release",
+            "--manifest-path",
+            self.suite.crate.cargo_toml,
+            "--target-dir",
+            self.build_dir,
+        ]
+
+    @property
+    def build_steps(self):
+        return self.suite.crate.steps
+
     def build(self):
+        if self.installed:
+            logging.info(
+                f"Skipping {self.name}: {os.path.relpath(self.path)} already exists"
+            )
+            return
+
+        self.suite.crate.repo.fetch()
+        logging.info(f"Starting build: {self.name}")
+        self.install_prefix.mkdir(parents=True, exist_ok=True)
+        self.build_dir.mkdir(parents=True, exist_ok=True)
         for lib in self.suite.deps:
             if lib.repo:
                 lib.repo.fetch()
 
         with ExitStack() as patchstack:
-            crates = self.suite.deps + [self]
-            [patchstack.enter_context(c.repo.patch(self.profile)) for c in crates]
+            crates = self.suite.deps + (self.suite.crate,)
+            [patchstack.enter_context(c.repo.patch(self.patch_suffix)) for c in crates]
             self._cargo_build()
-            target_bin = self.build_dir / "release" / super().name
+            target_bin = self.build_dir / "release" / self.suite.crate.name
             if not target_bin.exists():
-                print(target_bin)
+                print(str(target_bin))
                 raise BuildError(f"Build target does not exist")
             logging.info(f"Symlinking {target_bin} -> {self.path}")
             os.symlink(target_bin, self.path)
+
+        logging.info(
+            f"Build finished: {self.name}, installed at '{os.path.relpath(self.path)}'"
+        )
 
 
 class CustomExperiment(Experiment):
@@ -429,6 +471,10 @@ class Experiments:
         return list({a.name: a for a in l}.values())
 
     @property
+    def build_steps(self):
+        return sum(cfg.build_steps for cfg in self.configurations(only_missing=True))
+
+    @property
     def config(self) -> Path:
         if self._config and self._config.exists():
             return self._config
@@ -476,10 +522,6 @@ class Experiments:
         config.write_to_file(REBENCH_CONF)
         self._config = REBENCH_CONF
         return self._config
-
-    @property
-    def build_steps(self) -> int:
-        return sum([e.build_steps for e in self.experiments])
 
     @property
     def run_steps(self) -> int:
