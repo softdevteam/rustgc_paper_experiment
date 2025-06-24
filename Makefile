@@ -10,6 +10,7 @@ LOGFILE := experiment.log
 VENV_DIR := .venv
 VENV_PYTHON := $(VENV_DIR)/bin/python
 PYTHON := $(VENV_PYTHON)  # Use venv python consistently
+INVOKE := $(VENV_DIR)/bin/invoke
 
 BIN_DIR ?= $(CURDIR)/artefacts/bin
 BIN_ARCHIVE ?= artefacts-bin.tar.xz
@@ -19,12 +20,14 @@ PREBUILT_BIN := $(PREBUILT_DIR)/bin  # Added definition
 GDRIVE_FILE_ID = 1oDkZ2RH65iq25_65AppzdLH_zzbt6oRz
 GDRIVE_ARTEFACT = $(PREBUILT_DIR)/$(BIN_ARCHIVE)
 
-.PHONY: venv run-full run-quick fetch-binaries bare-metal
+.PHONY: run-full run-quick fetch-binaries bare-metal
 
-venv:
-	@test -d $(VENV_DIR) || python3 -m venv $(VENV_DIR)
+$(VENV_DIR):
+	python3 -m venv $(VENV_DIR)
 	$(PYTHON) -m pip install --upgrade pip
-	$(PYTHON) -m pip install .
+	$(PYTHON) -m pip install -e .
+
+venv: pyproject.toml | $(VENV_DIR)
 
 run-quick: fetch-binaries
 	docker buildx build \
@@ -69,7 +72,7 @@ fetch-binaries: venv
 	@echo "Done"
 
 bare-metal: venv
-	@./run build-alloy \
+	@$(INVOKE) build-benchmarks \
 		$(if $(EXPERIMENTS),--experiments $(EXPERIMENTS)) \
 		$(if $(SUITES),--suites $(SUITES)) \
 		$(if $(MEASUREMENTS),--measurements $(MEASUREMENTS))
