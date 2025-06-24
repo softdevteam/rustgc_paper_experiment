@@ -23,7 +23,6 @@ llvm
 make
 ninja
 pkgconf
-pipx
 procps-ng
 python-pipx
 rsync
