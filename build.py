@@ -29,6 +29,7 @@ yaml.add_representer(DoubleQuotedStr, double_quoted_str_representer)
 REBENCH_EXEC = Path(".venv/bin/rebench").resolve()
 REBENCH_CONF = Path("rebench.conf").resolve()
 RESULTS_DIR = Path("results").resolve()
+PATCH_DIR = Path("patch").resolve()
 DEFAULT_PEXECS = 30
 PEXECS = 30
 DEFAULT_MEASUREMENTS = ["perf"]
@@ -82,7 +83,7 @@ class ExperimentProfile(Enum):
     @classmethod
     def experiments(cls, pexecs=DEFAULT_PEXECS) -> List["Experiment"]:
         return [
-            Experiment(list(set(cls) & set(suite.profiles)), m, suite, pexecs)
+            Experiment(tuple(set(cls) & set(suite.profiles)), m, suite, pexecs)
             for suite in BenchmarkSuite.all()
             for m in cls.measurements
         ]
@@ -210,9 +211,9 @@ class BenchmarkSuite:
         }
 
 
-@dataclass
+@dataclass(frozen=True)
 class Experiment:
-    profiles: List[ExperimentProfile]
+    profiles: Tuple[ExperimentProfile]
     measurement: Metric
     suite: "BenchmarkSuite"
     pexecs: int = 0
@@ -234,11 +235,6 @@ class Experiment:
             config,
             self.name,
         ]
-
-    @property
-    def steps(self):
-        bms = len(self.suite.benchmarks)
-        return bms * len(self.configurations()) * self.pexecs
 
     def run(self, c, pexecs, config):
         self.results.parent.mkdir(parents=True, exist_ok=True)
@@ -266,12 +262,7 @@ class Experiment:
 
     @property
     def results(self) -> Path:
-        return (
-            RESULTS_DIR
-            / self.measurement.value
-            / self.experiment
-            / f"{self.suite.name}.csv"
-        )
+        return RESULTS_DIR / self.suite.name / self.measurement.value / "results.data"
 
     @property
     def experiment(self):
@@ -301,6 +292,7 @@ class Experiment:
 
 @dataclass(frozen=True)
 class Executor:
+    experiment: "Experiment"
     suite: "BenchmarkSuite"
     metric: "Metric"
     id: str
@@ -324,15 +316,15 @@ class Executor:
 
     @property
     def path(self) -> Path:
-        return self.install_prefix / self.id
+        return self.install_prefix / self.name
 
     @property
-    def stats_dir(self) -> Path:
-        return self.experiment.results.parent / "stats" / self.suite.name
+    def metrics_data(self) -> Path:
+        return self.experiment.results.parent / f"{self.id}"
 
     @property
     def build_dir(self) -> Path:
-        return BUILD_DIR / "benchmarks" / self.suite.name / self.id
+        return BUILD_DIR / "benchmarks" / self.suite.name / self.name
 
     @property
     def installed(self) -> bool:
@@ -434,6 +426,7 @@ class CustomExperiment(Experiment):
 
 @dataclass
 class Experiments:
+    pexecs: int
     experiments: List[Experiment]
     _config: Optional[Path] = None
 
@@ -475,6 +468,12 @@ class Experiments:
         return sum(cfg.build_steps for cfg in self.configurations(only_missing=True))
 
     @property
+    def total_iters(self):
+        unique = sum(len(cfg.suite.benchmarks) for cfg in self.configurations())
+        print(self.pexecs)
+        return unique * self.pexecs
+
+    @property
     def config(self) -> Path:
         if self._config and self._config.exists():
             return self._config
@@ -483,18 +482,30 @@ class Experiments:
         exec_part = {}
         bm_part = {}
 
+        executors = self.configurations()
+        for cfg in executors:
+            exec_part[cfg.name] = {
+                "path": str(cfg.install_prefix),
+                "executable": cfg.path.name,
+            }
+            if cfg.metric == Metric.METRICS:
+                exec_part[cfg.name].update(
+                    {
+                        "env": {
+                            "GC_LOG_DIR": str(cfg.metrics_data),
+                            "LD_PRELOAD": str(
+                                cfg.alloy.install_prefix / "lib" / "libgc.so"
+                            ),
+                        }
+                    }
+                )
+
         for e in self.experiments:
             exp_part[e.name] = {
                 "suites": [e.suite.name],
-                "executions": [cfg.name for cfg in e.configurations()],
+                "executions": [cfg.name for cfg in executors if cfg.experiment == e],
                 "data_file": str(e.results),
             }
-
-            for cfg in e.configurations():
-                exec_part[cfg.name] = {
-                    "path": str(cfg.install_prefix),
-                    "executable": cfg.path.name,
-                }
 
             bm_part[e.suite.name] = {
                 "gauge_adapter": e.gauge_adapter,
@@ -523,10 +534,6 @@ class Experiments:
         self._config = REBENCH_CONF
         return self._config
 
-    @property
-    def run_steps(self) -> int:
-        return sum([e.steps for e in self.experiments])
-
     def configurations(
         self, only_installed=False, only_missing=False
     ) -> List["Executor"]:
@@ -541,14 +548,18 @@ class Experiments:
                 name = "default" if p in identical else p.full
                 is_metrics = e.measurement == Metric.METRICS
                 alloy = Alloy(p, metrics=is_metrics)
-                executors.add(Executor(e.suite, e.measurement, name, alloy))
+                executors.add(Executor(e, e.suite, e.measurement, name, alloy))
 
+        if only_installed:
+            executors = [e for e in executors if e.installed]
+        elif only_missing:
+            executors = [e for e in executors if not e.installed]
         return executors
 
     @classmethod
     def all(cls, pexecs: int = 30) -> "Experiments":
         profiles = [GCVS, PremOpt, Elision]
-        return cls([e for p in profiles for e in p.experiments(pexecs)])
+        return cls(pexecs, [e for p in profiles for e in p.experiments(pexecs)])
 
 
 @dataclass
