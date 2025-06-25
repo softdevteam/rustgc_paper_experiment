@@ -202,7 +202,6 @@ ALLOY = Artefact(
 
 class Alloy(Artefact):
     DEFAULT_FLAGS: ClassVar[Dict[str, bool]] = {
-        "gc-metrics": False,
         "finalizer-safety-analysis": False,
         "finalizer-elision": True,
         "premature-finalizer-prevention": True,
@@ -215,14 +214,19 @@ class Alloy(Artefact):
         self.profile = profile
         self.metrics = metrics
         self._config = None
+        self.flags = self.DEFAULT_FLAGS.copy() | (self.profile.alloy_flags or {})
 
     @property
     def config(self) -> Path:
-        if self._config and self._config.exists():
+        if self._config:
             return self._config
 
+        flags = self.flags.copy()
+        if self.metrics:
+            flags.update({"gc-metrics": True})
+
         config = {
-            "alloy": self.flags,
+            "alloy": flags,
             "rust": {
                 "codegen-units": 0,
                 "optimize": True,
@@ -242,10 +246,6 @@ class Alloy(Artefact):
         with open(file, "w") as f:
             toml.dump(config, f)
         return file
-
-    @property
-    def flags(self):
-        return self.DEFAULT_FLAGS.copy() | (self.profile.alloy_flags or {})
 
     @property
     def name(self) -> str:
