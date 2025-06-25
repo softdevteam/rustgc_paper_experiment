@@ -53,7 +53,7 @@ def build_benchmarks(c, experiments=None, suites=None, measurements=None):
         print("Nothing to do")
         return
     print(f"Found {len(cfgs)} benchmark configuration(s):")
-    [print(f"  {cfg.cfg_name}") for cfg in cfgs]
+    [print(f"  {cfg.name}") for cfg in cfgs]
     with timer("Building benchmark configurations", exps.build_steps):
         for cfg in cfgs:
             cfg.build()
@@ -65,11 +65,9 @@ def run_benchmarks(c, pexecs, experiments=None, suites=None, measurements=None):
         int(pexecs), exps=experiments, suites=suites, measurements=measurements
     )
 
-    total_iters = exps.run_steps
-
     with timer(
-        f"Running {len(exps.experiments)} experiments for {pexecs} iterations",
-        total_iters,
+        f"Running {len(exps.experiments)} experiments for {exps.total_iters} iterations",
+        exps.total_iters,
         detailed=True,
     ):
         exps.run(c, pexecs)
