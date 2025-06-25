@@ -393,6 +393,25 @@ Since the original submission, we have made several improvements to Alloy that m
 
 This section will be updated with further details as the artefact evaluation progresses.
 
+## A brief guide to the experiment process
+
+The `Makefile` serves as the entry point to the experiment. Whether you choose
+to run experiments inside Docker or on bare metal, it firsts downloads Alloy,
+checks out a fixed version of it, and builds several configurations for the
+different experiments. These binaries are stored in `artefacts/bin/alloy/`.
+
+Next, each benchmark is downloaded, checked out to a fixed version, and
+compiled with the different Alloy configurations. Some benchmarks include
+harnesses which are part of this repo itself instead of downloaded, these can
+be found in `src/`. Some benchmark variants uses patches found in `patch/`
+which are automatically applied. The patches are named accordingly, identifying
+which experiment variant they belong to. The resulting binaries are placed in
+`artefacts/bin/benchmarks/`.
+
+Once all binaries are prepared, ReBench is used to run the experiments, with
+raw data saved to `results/`. The data is then processed and visualized using
+Python scripts, most of which are organized as Invoke tasks. The final plots
+are written to `plots/`, ready for direct inclusion in the paper.
 
 ## Appendix: Installing Docker on Debian
 
@@ -418,3 +437,4 @@ sudo docker run hello-world
 ```
 
 See [Docker’s official docs](https://docs.docker.com/engine/install/debian/) for troubleshooting.
+
