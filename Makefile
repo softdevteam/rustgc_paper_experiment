@@ -1,7 +1,6 @@
 CURDIR ?= $(shell pwd)
 
-IMAGE_full := full:latest
-IMAGE_quick := quick:latest
+IMAGE := $(if $(FULL),full:latest,quick:latest)
 LOG_STAGE := log_export
 RUNTIME_STAGE := runtime
 RESULTS := $(CURDIR)/results
@@ -9,16 +8,18 @@ LOGFILE := experiment.log
 
 VENV_DIR := .venv
 VENV_PYTHON := $(VENV_DIR)/bin/python
-PYTHON := $(VENV_PYTHON)  # Use venv python consistently
+PYTHON := $(VENV_PYTHON)
 INVOKE := $(VENV_DIR)/bin/invoke
 
 BIN_DIR ?= $(CURDIR)/artefacts/bin
 BIN_ARCHIVE ?= artefacts-bin.tar.xz
-PREBUILT_DIR := $(CURDIR)/artefacts/prebuilt
-PREBUILT_BIN := $(PREBUILT_DIR)/bin  # Added definition
 
-GDRIVE_FILE_ID = 1oDkZ2RH65iq25_65AppzdLH_zzbt6oRz
-GDRIVE_ARTEFACT = $(PREBUILT_DIR)/$(BIN_ARCHIVE)
+EXP_ARG := $(if $(strip $(EXPERIMENTS)),--experiments "$(EXPERIMENTS)")
+SUITE_ARG := $(if $(strip $(SUITES)),--suites $(SUITES))
+MEASURE_ARG := $(if $(strip $(MEASUREMENTS)),--measurements $(MEASUREMENTS))
+
+QUICK_PEXECS = 5
+FULL_PEXECS = 30
 
 .PHONY: run-full run-quick fetch-binaries bare-metal
 
@@ -29,51 +30,50 @@ $(VENV_DIR):
 
 venv: pyproject.toml | $(VENV_DIR)
 
-run-quick: fetch-binaries
-	docker buildx build \
+
+define WITH_DOCKER
+	docker buildx build --progress=plain \
+		--build-arg FULL=$1 \
+		$(if $(EXP_ARG),--build-arg EXPERIMENTS=$(EXP_ARG)) \
+		$(if $(SUITE_ARG),--build-arg SUITES=$(SUITE_ARG)) \
+		$(if $(MEASURE_ARG),--build-arg MEASUREMENTS=$(MEASURE_ARG)) \
 		--target runtime \
-		--tag $(IMAGE_quick) \
-		--build-arg BUILD_QUICK=true \
+		--tag $(IMAGE) \
 		--load .
 	@test -f $(LOGFILE) || touch $(LOGFILE)
 	chmod a+w $(LOGFILE)
 	docker run --rm -it \
 		--mount type=bind,source="$(LOGFILE)",target=/app/experiment.log \
 		--mount type=bind,source="$(RESULTS)",target=/app/results \
-		$(IMAGE_quick)
+		$(IMAGE)
+endef
+
+
+run-quick:
+	$(call WITH_DOCKER,false)
 
 run-full:
-	docker buildx build \
-		--build-arg $(if $(EXPERIMENTS),EXPERIMENTS="--experiments $(EXPERIMENTS))" \
-		--build-arg $(if $(SUITES),SUITES="--suites $(SUITES))" \
-		--build-arg $(if $(MEASUREMENTS),MEASUREMENTS="--measurements $(MEASUREMENTS))" \
-		--target runtime \
-		--tag $(IMAGE_full) \
-		--load .
-	@test -f $(LOGFILE) || touch $(LOGFILE)
-	chmod a+w $(LOGFILE)
-	docker run --rm -it \
-		--mount type=bind,source="$(LOGFILE)",target=/app/experiment.log \
-		--mount type=bind,source="$(RESULTS)",target=/app/results \
-		$(IMAGE_full)
+	$(call WITH_DOCKER,true)
 
 tarball:
 	@echo "Compressing $(BIN_DIR) with maximum compression..."
 	cd artefacts && tar -cf - bin | xz -9e > $(BIN_ARCHIVE)
 	@echo "Created $(BIN_ARCHIVE) ($$(du -h artefacts/$(BIN_ARCHIVE) | cut -f1))"
 
-fetch-binaries: venv
-	@mkdir -p $(PREBUILT_DIR)
-	@echo "Downloading from Google Drive..."
-	@gdown $(GDRIVE_FILE_ID) -O $(GDRIVE_ARTEFACT)
-	@echo "Download complete. File size: $$(du -h $(GDRIVE_ARTEFACT) | cut -f1)"
-	@echo "Unzipping $(GDRIVE_ARTEFACT) to $(PREBUILT_DIR)..."
-	tar -xvf $(GDRIVE_ARTEFACT) -C $(PREBUILT_DIR)  # Fixed typo
-	@echo "Done"
+fetch-binaries: $(GDRIVE_ARTEFACT)
+
+$(GDRIVE_ARTEFACT):
+	./fetch_binaries.sh
 
 bare-metal: venv
 	@$(INVOKE) build-benchmarks \
-		$(if $(EXPERIMENTS),--experiments $(EXPERIMENTS)) \
-		$(if $(SUITES),--suites $(SUITES)) \
-		$(if $(MEASUREMENTS),--measurements $(MEASUREMENTS))
+		$(EXP_ARG) \
+		$(SUITE_ARG) \
+		$(MEASURE_ARG)
+
+	@$(INVOKE) run-benchmarks \
+		$(if $(PEXECS),$(PEXECS),$(FULL_PEXECS)) \
+		$(EXP_ARG) \
+		$(SUITE_ARG) \
+		$(MEASURE_ARG)
 

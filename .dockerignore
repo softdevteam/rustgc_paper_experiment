@@ -1,8 +1,7 @@
-venv/
+.venv/
 **/.git/
 results/
 plots/
 artefacts/
 src/
 !src/parserbench
-!artefacts/prebuilt

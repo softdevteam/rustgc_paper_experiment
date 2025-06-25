@@ -1,18 +1,23 @@
 # Use BuildKit features
 # syntax=docker/dockerfile:1.4
 
+ARG PEXECS=1
+ARG EXPERIMENTS
+ARG SUITES
+ARG MEASUREMENTS
+
 FROM debian:latest as base
 
 FROM base as build
 WORKDIR /app
 
-ARG BUILD_QUICK=false
+ARG FULL
 ARG PEXECS
 ARG EXPERIMENTS
 ARG SUITES
 ARG MEASUREMENTS
 
-ENV BUILD_QUICK=$BUILD_QUICK
+ENV FULL=$FULL
 ENV PEXECS=$PEXECS
 ENV EXPERIMENTS=$EXPERIMENTS
 ENV SUITES=$SUITES
@@ -27,7 +32,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     libdwarf-dev libunwind-dev libboost-dev libboost-iostreams-dev \
     libboost-all-dev libboost-program-options-dev libboost-regex-dev zlib1g-dev zstd libelf-dev elfutils \
     libdw-dev pkg-config libssl-dev zlib1g-dev libzstd-dev liblzma-dev \
-    libffi-dev libedit-dev llvm-dev clang procps autotools-dev \
+    libffi-dev libedit-dev llvm-dev clang procps autotools-dev xz-utils \
     gperf bison flex xvfb
 
 # Set Python 3.11 as default
@@ -51,22 +56,36 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip --break-system-packages && \
     pip install .[dev] --break-system-packages
 
-RUN mkdir -p /app/artefacts
-
 COPY . .
 
-RUN if [ "$BUILD_QUICK" = "false" ]; then \
-    invoke build-alloy $EXPERIMENTS $MEASUREMENTS; \
-    else \
-    echo "Using prebuilt binaries"; \
-    cp -r ./artefacts/prebuilt /app/artefacts/; \
+RUN mkdir -p /app/artefacts
+
+RUN --mount=type=cache,target=/cache \
+    if [ "$FULL" = "false" ]; then \
+    ./fetch_binaries.sh --out-dir /cache && \
+    cp -r /cache/bin /app/artefacts/ && \
+    ls -ls /app/artefacts/bin; \
     fi
 
+RUN  invoke build-alloy $EXPERIMENTS $MEASUREMENTS
 
 FROM scratch as log_export
 COPY --from=build /app/experiment.log /docker-run-full.log
 
 FROM debian:latest as runtime
+
+ARG BUILD_QUICK=false
+ARG PEXECS
+ARG EXPERIMENTS
+ARG SUITES
+ARG MEASUREMENTS
+
+ENV BUILD_QUICK=$BUILD_QUICK
+ENV PEXECS=$PEXECS
+ENV EXPERIMENTS=$EXPERIMENTS
+ENV SUITES=$SUITES
+ENV MEASUREMENTS=$MEASUREMENTS
+
 WORKDIR /app
 COPY --from=build /app/artefacts /app/artefacts
 
