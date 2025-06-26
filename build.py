@@ -139,7 +139,7 @@ class BenchmarkSuite:
     def results(self):
         from results import SuiteData
 
-        results = SuiteData.for_measurements(self, [Metric.PERF, Metric.METRICS])
+        results = SuiteData(self, [Metric.PERF, Metric.METRICS])
         return results
 
     def raw_data(self, measurement) -> Path:
@@ -469,7 +469,7 @@ class Experiments:
             raw = s.results
             exps = [e for e in suite_exps if e.suite == s]
             for e in exps:
-                if e.results.exists():
+                if e.measurement == Metric.PERF and e.results.exists():
                     results = raw.for_experiment(e)
                     all_exps.append(results.summary().data)
                     # print(e.name)

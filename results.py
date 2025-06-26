@@ -1,5 +1,6 @@
 #! /usr/bin/env python
 
+import glob
 import re
 import warnings
 from dataclasses import dataclass
@@ -71,19 +72,32 @@ matplotlib.rcParams.update(
 
 
 class Criterea(Enum):
-    GC_ALLOCS = "Gc allocated"
-    RC_ALLOCS = "Rc allocated"
-    ARC_ALLOCS = "Arc allocated"
-    BOX_ALLOCS = "Box allocated"
-    MUTATOR_TIME = "mutator time"
-    GC_TIME = "GC time"
-    GC_CYCLES = "num GCs"
-    BARRIERS_VISITED = "barriers visited"
-    FLZR_REGISTERED = "finalizers registered"
-    FLZR_COMPLETED = "finalizers completed"
-    FLZR_ELIDABLE = "finalizers elidable"
+    COLLECTION_NUMBER = "collection_number"
+    COLLECTION_KIND = "kind"
+    HEAP_SIZE_ON_ENTRY = "heap_size_on_entry"
+    TIME_MARKING_MS = "time_marking_ms"
+    TIME_MARKING_NS = "time_marking_ns"
+    BYTES_FREED = "bytes_freed"
+    LIVE_OBJECTS_WITH_FINALIZERS = "live_objects_with_finalizers"
+    OBJECTS_IN_FINALIZER_QUEUE = "objects_in_finalizer_queue"
+    TIME_FINALIZER_QUEUE_MS = "time_fin_q_ms"
+    TIME_FINALIZER_QUEUE_NS = "time_fin_q_ns"
+    TIME_SWEEPING_MS = "time_sweeping_ms"
+    TIME_SWEEPING_NS = "time_sweeping_ns"
+    TIME_TOTAL_MS = "time_total_ms"
+    TIME_TOTAL_NS = "time_total_ns"
+    FINALIZERS_RUN = "finalizers_run"
+    FINALIZERS_REGISTERED = "finalizers_registered"
+    ALLOCATED_GC = "allocated_gc"
+    ALLOCATED_ARC = "allocated_arc"
+    ALLOCATED_RC = "allocated_rc"
+    ALLOCATED_BOXED = "allocated_boxed"
+    GC_ALLOCS = "allocated_gc"
+    RC_ALLOCS = "allocated_rc"
+    ARC_ALLOCS = "allocated_arc"
+    BOX_ALLOCS = "allocated_box"
     WALLCLOCK = "total"
-    SYS = "sys"
+    USER = "usr"
 
     def __lt__(self, other):
         return self.value < other.value
@@ -643,6 +657,32 @@ class SuiteData:
     suite: BenchmarkSuite
     data: pd.DataFrame
 
+    def _arithmetic_mean(df):
+        def with_99_cis(series):
+            n = len(series)
+            mean = series.mean()
+            std_err = series.std(ddof=1) / (n**0.5)  # Standard error
+            margin_of_error = (
+                stats.t.ppf((1 + 0.99) / 2, df=n - 1) * std_err
+            )  # t-score * SE
+            return pd.Series(
+                {
+                    "mean": mean,
+                    "ci": margin_of_error,
+                    "lower": mean - margin_of_error,
+                    "upper": mean + margin_of_error,
+                }
+            )
+
+        data = (
+            df
+            .groupby(["configuration", "benchmark", "criterion"])["value"]
+            .apply(with_99_cis)
+            .unstack()
+            .reset_index()
+        )
+        return data
+
     @classmethod
     def from_raw_data(cls, suite, measurement):
         # def to_executor(name):
@@ -650,12 +690,6 @@ class SuiteData:
         #         if cfg.name == name:
         #             return cfg
         #     raise ValueError(f"Executor for {name} not found.")
-
-        def to_benchmark(name):
-            for b in suite.benchmarks:
-                if b.name == name:
-                    return b
-            raise ValueError(f"Benchmark for {name} not found.")
 
         raw = pd.read_csv(
             suite.raw_data(measurement),
@@ -669,19 +703,31 @@ class SuiteData:
         ]
         return cls(suite, raw)
 
-    @classmethod
-    def for_measurements(cls, suite, measurements):
-        dfs = []
-        for m in measurements:
-            print(suite.raw_data(m))
-            if not suite.raw_data(m).exists():
-                continue
-            df = cls.from_raw_data(suite, m).data
-            dfs.append(df)
+    def __init__(self, suite, measurements):
+        from build import Metric
 
-        if not dfs:
-            return None
-        return SuiteData(suite, pd.concat(dfs, ignore_index=True))
+        def to_benchmark(name):
+            for b in suite.benchmarks:
+                if b.name.lower() == name.lower():
+                    return b
+            raise ValueError(f"Benchmark for {name} not found.")
+        perf = pd.DataFrame()
+
+        if Metric.PERF in measurements:
+            file = suite.raw_data(Metric.PERF)
+            if file.exists():
+                perf = pd.read_csv(
+                    file,
+                    sep="\t",
+                    comment="#",
+                    index_col="suite",
+                    converters={"criterion": Criterea, "benchmark": to_benchmark},
+                )
+                perf = perf.rename(columns={"executor": "configuration"}).reset_index()[
+                    ["benchmark", "configuration", "value", "criterion","invocation"]
+                ]
+                # print(perf)
+                self.data = perf
 
     def summary(self):
         return Summary(self)
@@ -882,7 +928,9 @@ class Overall:
             best_configs = {}
             for crit in criteria_list:
                 crit_df = suites[suites["criterion"] == crit]
-                best_configs[crit] = crit_df.loc[crit_df["value"].idxmin(), "configuration"]
+                best_configs[crit] = crit_df.loc[
+                    crit_df["value"].idxmin(), "configuration"
+                ]
 
             cfgs = suites["configuration"].drop_duplicates().to_list()
 
@@ -897,10 +945,17 @@ class Overall:
                         val = fmt_float(row["value"], bold=(c == best_configs[crit]))
                         ci = fmt_ci(row["lower"], row["upper"])
                     else:  # Other rows
-                        val = fmt_float(row["gmean_ratio"], bold=(c == best_configs[crit])) + "×"
+                        val = (
+                            fmt_float(
+                                row["gmean_ratio"], bold=(c == best_configs[crit])
+                            )
+                            + "×"
+                        )
                         if not row["gmean_significant"]:
                             val += r"\textsuperscript{\dag}"
-                        ci = fmt_ci(row["gmean_ratio_ci_low"], row["gmean_ratio_ci_high"])
+                        ci = fmt_ci(
+                            row["gmean_ratio_ci_low"], row["gmean_ratio_ci_high"]
+                        )
 
                     row_data.extend([val, ci])
 
