@@ -41,25 +41,6 @@ class Metric(Enum):
     HEAPTRACK = "heaptrack"
 
 
-class Stats(Enum):
-    GC_ALLOCS = "Gc allocated"
-    RC_ALLOCS = "Rc allocated"
-    ARC_ALLOCS = "Arc allocated"
-    BOX_ALLOCS = "Box allocated"
-    MUTATOR_TIME = "mutator time"
-    GC_TIME = "GC time"
-    GC_CYCLES = "num GCs"
-    BARRIERS_VISITED = "barriers visited"
-    FLZR_REGISTERED = "finalizers registered"
-    FLZR_COMPLETED = "finalizers completed"
-    FLZR_ELIDABLE = "finalizers elidable"
-    WALLCLOCK = "wallclock"
-    SYS = "sys"
-
-    def __lt__(self, other):
-        return self.value < other.value
-
-
 class ExperimentProfile(Enum):
 
     def __init__(self, value, latex, alloy_flags=None):
@@ -153,6 +134,16 @@ class BenchmarkSuite:
     @property
     def latex(self) -> str:
         return f"\\{self.name.replace('-','')}"
+
+    @property
+    def results(self):
+        from results import SuiteData
+
+        results = SuiteData.for_measurements(self, [Metric.PERF, Metric.METRICS])
+        return results
+
+    def raw_data(self, measurement) -> Path:
+        return RESULTS_DIR / self.name / measurement.value / "results.data"
 
     @property
     def args(self) -> str:
@@ -260,6 +251,25 @@ class Experiment:
                     f"Setup process {setup_proc.pid} terminated with status ({setup_proc.poll()})"
                 )
 
+    def configurations(self, only_installed=False, only_missing=False):
+        if only_installed and only_missing:
+            raise ValueError("Can't select both only_installed and only_missing")
+
+        identical = [GCVS.GC, PremOpt.OPT, Elision.OPT]
+        executors = set()
+
+        for p in self.profiles:
+            name = "default" if p in identical else p.full
+            is_metrics = self.measurement == Metric.METRICS
+            alloy = Alloy(p, metrics=is_metrics)
+            executors.add(Executor(self, self.suite, self.measurement, name, alloy))
+
+        if only_installed:
+            executors = [self for self in executors if self.installed]
+        elif only_missing:
+            executors = [self for self in executors if not self.installed]
+        return executors
+
     @property
     def results(self) -> Path:
         return RESULTS_DIR / self.suite.name / self.measurement.value / "results.data"
@@ -274,9 +284,10 @@ class Experiment:
     def process(self):
         from results import Results
 
-        results = Results.from_raw_data(self)
-        summary = results.summary()
-        print(summary)
+        if not self.results.exists():
+            logging.info(f"No results to process for {self.name}")
+            return
+
 
         # print(plotter.mem_measurements)
         # print(plotter.wallclock)
@@ -448,8 +459,28 @@ class Experiments:
             e.run(c, pexecs, self.config)
 
     def process(self, c):
-        for e in self.experiments:
-            e.process()
+        exp_name = "premopt"
+        suite_exps = [e for e in self.experiments if e.experiment == exp_name]
+        suites = set(e.suite for e in suite_exps)
+
+        all_exps = []
+
+        for s in suites:
+            raw = s.results
+            exps = [e for e in suite_exps if e.suite == s]
+            for e in exps:
+                if e.results.exists():
+                    results = raw.for_experiment(e)
+                    all_exps.append(results.summary().data)
+                    # print(e.name)
+                    # print()
+                    # print(data.summary().without_errs())
+                    # print()
+                    # print("=====")
+        from results import Overall
+
+        overview = Overall(all_exps)
+        overview.mk_perf_table()
 
     def remove(self):
         for e in self.experiments:
@@ -540,20 +571,9 @@ class Experiments:
         if only_installed and only_missing:
             raise ValueError("Can't select both only_installed and only_missing")
 
-        identical = [GCVS.GC, PremOpt.OPT, Elision.OPT]
-
         executors = set()
         for e in self.experiments:
-            for p in e.profiles:
-                name = "default" if p in identical else p.full
-                is_metrics = e.measurement == Metric.METRICS
-                alloy = Alloy(p, metrics=is_metrics)
-                executors.add(Executor(e, e.suite, e.measurement, name, alloy))
-
-        if only_installed:
-            executors = [e for e in executors if e.installed]
-        elif only_missing:
-            executors = [e for e in executors if not e.installed]
+            executors.update(e.configurations(only_installed, only_missing))
         return executors
 
     @classmethod

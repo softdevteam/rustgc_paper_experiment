@@ -74,17 +74,9 @@ def run_benchmarks(c, pexecs, experiments=None, suites=None, measurements=None):
 
 
 @task
-def process_benchmarks(c, experiments=None, suites=None, metric=None):
-    exps = Experiments()
-    if suites:
-        exps = exps.filter_suites(suites)
-
-    if experiments:
-        exps = exps.filter_experiments(experiments)
-
-    if metric:
-        exps = exps.filter_metric(metric)
-
+def process_benchmarks(c):
+    # list_exps(c)
+    exps = Experiments.all()
     exps.process(c)
 
 

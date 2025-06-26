@@ -395,13 +395,15 @@ class Summary(Results):
 
         # Final merge
         self.data = self.gmeans.merge(
-            best_worst, on=["configuration", "criterion"], how="inner"
-        ).merge(gmean_ratios, on=["configuration", "criterion"], how="inner")
+            best_worst, on=["configuration", "criterion"], how="outer"
+        ).merge(gmean_ratios, on=["configuration", "criterion"], how="outer")
+        self.data["suite"] = results.experiment.suite.name
+        self.data["experiment"] = results.experiment.name
 
     def _create_config_map(self, results):
         return pd.DataFrame(
             [
-                {"configuration": cfg.name, "baseline": cfg.baseline}
+                {"configuration": cfg.name, "baseline": cfg.baseline.name}
                 for cfg in results.experiment.configurations()
             ]
         )
@@ -610,5 +612,305 @@ class Summary(Results):
 
         return pd.DataFrame(gmean_cis).round(3)
 
+    def without_errs(self):
+        error_cols = [
+            "worst_pct_ci_low",
+            "worst_pct_ci_high",
+            "worst_ratio_ci_low",
+            "worst_ratio_ci_high",
+            "best_pct_ci_low",
+            "best_pct_ci_high",
+            "best_ratio_ci_low",
+            "best_ratio_ci_high",
+            "gmean_pct_ci_low",
+            "gmean_pct_ci_high",
+            "gmean_ratio_ci_high",
+            "gmean_ratio_ci_low",
+        ]
+
+        df = self.data.copy()
+        df = df.drop(error_cols, axis=1)
+        summary = object.__new__(Summary)
+        summary.data = df
+        return summary
+
     def __repr__(self):
         return repr(self.data)
+
+
+@dataclass
+class SuiteData:
+    suite: BenchmarkSuite
+    data: pd.DataFrame
+
+    @classmethod
+    def from_raw_data(cls, suite, measurement):
+        # def to_executor(name):
+        #     for cfg in self.experiment.configurations():
+        #         if cfg.name == name:
+        #             return cfg
+        #     raise ValueError(f"Executor for {name} not found.")
+
+        def to_benchmark(name):
+            for b in suite.benchmarks:
+                if b.name == name:
+                    return b
+            raise ValueError(f"Benchmark for {name} not found.")
+
+        raw = pd.read_csv(
+            suite.raw_data(measurement),
+            sep="\t",
+            comment="#",
+            index_col="suite",
+            converters={"criterion": Criterea, "benchmark": to_benchmark},
+        )
+        raw = raw.rename(columns={"executor": "configuration"}).reset_index()[
+            ["benchmark", "configuration", "value", "criterion"]
+        ]
+        return cls(suite, raw)
+
+    @classmethod
+    def for_measurements(cls, suite, measurements):
+        dfs = []
+        for m in measurements:
+            print(suite.raw_data(m))
+            if not suite.raw_data(m).exists():
+                continue
+            df = cls.from_raw_data(suite, m).data
+            dfs.append(df)
+
+        if not dfs:
+            return None
+        return SuiteData(suite, pd.concat(dfs, ignore_index=True))
+
+    def summary(self):
+        return Summary(self)
+
+    def for_experiment(self, experiment) -> "ExperimentData":
+        df = self.data.copy()
+        df = df[
+            df["configuration"].isin([cfg.name for cfg in experiment.configurations()])
+        ]
+        return ExperimentData(experiment, df)
+
+    def geometric_mean(self) -> "Results":
+        def with_99_cis(series):
+            clean_vals = series.dropna()
+            n = len(clean_vals)
+
+            if n == 0 or (clean_vals <= 0).any():
+                return pd.Series([0] * 3, index=["value", "lower", "upper"])
+
+            log_vals = np.log(clean_vals)
+            mean_log = np.mean(log_vals)
+            std_log = np.std(log_vals, ddof=1)  # Sample standard deviation
+
+            if n == 1:
+                return pd.Series(
+                    [np.exp(mean_log), np.nan, np.nan],
+                    index=["value", "lower", "upper"],
+                )
+
+            sem_log = std_log / np.sqrt(n)
+            t_crit = stats.t.ppf((1 + 0.99) / 2, df=n - 1)
+
+            ci_log = (mean_log - t_crit * sem_log, mean_log + t_crit * sem_log)
+
+            # Convert back to original scale
+            return pd.Series(
+                [np.exp(mean_log), np.exp(ci_log[0]), np.exp(ci_log[1])],
+                index=["value", "lower", "upper"],
+            )
+
+        data = (
+            self.data.copy()
+            .groupby(["configuration", "criterion"])["value"]
+            .apply(with_99_cis)
+            .unstack()
+            .reset_index()
+        )
+        return Results(experiment=self.experiment, data=data)
+
+    def arithmetic_mean(self) -> "Results":
+        def with_99_cis(series):
+            n = len(series)
+            mean = series.mean()
+            std_err = series.std(ddof=1) / (n**0.5)  # Standard error
+            margin_of_error = (
+                stats.t.ppf((1 + 0.99) / 2, df=n - 1) * std_err
+            )  # t-score * SE
+            return pd.Series(
+                {
+                    "mean": mean,
+                    "ci": margin_of_error,
+                    "lower": mean - margin_of_error,
+                    "upper": mean + margin_of_error,
+                }
+            )
+
+        data = (
+            self.data.copy()
+            .groupby(["configuration", "benchmark", "criterion"])["value"]
+            .apply(with_99_cis)
+            .unstack()
+            .reset_index()
+        )
+        return Results(experiment=self.experiment, data=data)
+
+
+@dataclass
+class ExperimentData:
+    experiment: Experiment
+    data: pd.DataFrame
+
+    def summary(self):
+        return Summary(self)
+
+    def geometric_mean(self) -> "Results":
+        def with_99_cis(series):
+            clean_vals = series.dropna()
+            n = len(clean_vals)
+
+            if n == 0 or (clean_vals <= 0).any():
+                return pd.Series([0] * 3, index=["value", "lower", "upper"])
+
+            log_vals = np.log(clean_vals)
+            mean_log = np.mean(log_vals)
+            std_log = np.std(log_vals, ddof=1)  # Sample standard deviation
+
+            if n == 1:
+                return pd.Series(
+                    [np.exp(mean_log), np.nan, np.nan],
+                    index=["value", "lower", "upper"],
+                )
+
+            sem_log = std_log / np.sqrt(n)
+            t_crit = stats.t.ppf((1 + 0.99) / 2, df=n - 1)
+
+            ci_log = (mean_log - t_crit * sem_log, mean_log + t_crit * sem_log)
+
+            # Convert back to original scale
+            return pd.Series(
+                [np.exp(mean_log), np.exp(ci_log[0]), np.exp(ci_log[1])],
+                index=["value", "lower", "upper"],
+            )
+
+        data = (
+            self.data.copy()
+            .groupby(["configuration", "criterion"])["value"]
+            .apply(with_99_cis)
+            .unstack()
+            .reset_index()
+        )
+        return Results(experiment=self.experiment, data=data)
+
+    def arithmetic_mean(self) -> "Results":
+        def with_99_cis(series):
+            n = len(series)
+            mean = series.mean()
+            std_err = series.std(ddof=1) / (n**0.5)  # Standard error
+            margin_of_error = (
+                stats.t.ppf((1 + 0.99) / 2, df=n - 1) * std_err
+            )  # t-score * SE
+            return pd.Series(
+                {
+                    "mean": mean,
+                    "ci": margin_of_error,
+                    "lower": mean - margin_of_error,
+                    "upper": mean + margin_of_error,
+                }
+            )
+
+        data = (
+            self.data.copy()
+            .groupby(["configuration", "benchmark", "criterion"])["value"]
+            .apply(with_99_cis)
+            .unstack()
+            .reset_index()
+        )
+        return Results(experiment=self.experiment, data=data)
+
+
+@dataclass
+class Overall:
+    data: pd.DataFrame
+
+    def __init__(self, dfs):
+        self.data = pd.concat(dfs, ignore_index=True)
+
+    def mk_perf_table(self):
+        df = self.data[self.data["experiment"].str.endswith("perf", na=False)].copy()
+        baseline = "none"
+        all_configs = df["configuration"].unique()
+        baseline_configs = sorted([c for c in all_configs if baseline in c])
+        other_configs = sorted([c for c in all_configs if baseline not in c])
+        config_order = baseline_configs + other_configs
+
+        # Convert to categorical with custom order
+        df["configuration"] = pd.Categorical(
+            df["configuration"], categories=config_order, ordered=True
+        )
+
+        df = df.sort_values(["suite", "configuration"])
+        self._mk_table(df.copy(), [Criterea.WALLCLOCK, Criterea.USER])
+
+    def _mk_table(self, df, criteria_list):
+        def fmt_float(x, digits=2, bold=False):
+            s = "-" if x is None else f"{x:.{digits}f}"
+            return f"\\textbf{{{s}}}" if bold else s
+
+        def fmt_ci(low, high):
+            if low is None or high is None:
+                return "-"
+            return f"\\scriptsize\\textcolor{{gray!80}}{{[{fmt_float(low)}, {fmt_float(high)}]}}"
+
+        # Generate table columns dynamically
+        col_spec = "l l" + " r@{\hspace{0.5em}}l" * len(criteria_list)
+        header = "Suite & Configuration"
+        for crit in criteria_list:
+            header += f" & \\multicolumn{{2}}{{c}}{{{crit.name}}}"
+
+        lines = [
+            f"\\begin{{tabular}}{{{col_spec}}}",
+            r"\toprule",
+            header + r" \\",
+            r"\midrule",
+        ]
+
+        for s, suites in df.groupby("suite", sort=False):
+            # Find best config for each criterion
+            best_configs = {}
+            for crit in criteria_list:
+                crit_df = suites[suites["criterion"] == crit]
+                best_configs[crit] = crit_df.loc[crit_df["value"].idxmin(), "configuration"]
+
+            cfgs = suites["configuration"].drop_duplicates().to_list()
+
+            for i, c in enumerate(cfgs):
+                config_rows = suites[suites["configuration"] == c]
+                row_data = [s if i == 0 else "", c]
+
+                for crit in criteria_list:
+                    row = config_rows[config_rows["criterion"] == crit].iloc[0]
+
+                    if i == 0:  # Baseline
+                        val = fmt_float(row["value"], bold=(c == best_configs[crit]))
+                        ci = fmt_ci(row["lower"], row["upper"])
+                    else:  # Other rows
+                        val = fmt_float(row["gmean_ratio"], bold=(c == best_configs[crit])) + "×"
+                        if not row["gmean_significant"]:
+                            val += r"\textsuperscript{\dag}"
+                        ci = fmt_ci(row["gmean_ratio_ci_low"], row["gmean_ratio_ci_high"])
+
+                    row_data.extend([val, ci])
+
+                lines.append(" & ".join(row_data) + r" \\")
+
+            lines.append(r"\midrule")
+
+        lines[-1] = r"\bottomrule"
+        lines.append(r"\end{tabular}")
+
+        with open("plots/suites.tex", "w") as f:
+            f.write("\n".join(lines))
+

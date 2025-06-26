@@ -77,3 +77,5 @@ bare-metal: venv
 		$(SUITE_ARG) \
 		$(MEASURE_ARG)
 
+process: venv
+	@$(INVOKE) process-benchmarks
