@@ -19,7 +19,7 @@ class Benchmark:
         return self.name < other.name
 
 
-ALACRITTY = [
+ALACRITTY = (
     Benchmark("cursor_motion"),
     Benchmark("dense_cells"),
     Benchmark("light_cells"),
@@ -30,31 +30,29 @@ ALACRITTY = [
     Benchmark("scrolling_top_region"),
     Benchmark("scrolling_top_small_region"),
     Benchmark("unicode"),
-]
+)
 
-FD = [
+FD = (
     Benchmark(
-        name="no-pattern", extra_args=f"--hidden --no-ignore '' '{artefacts.LINUX.src}'"
+        name="no-pattern",
+        extra_args=f"--hidden --no-ignore 'alloy'",
     ),
-    Benchmark(
-        name="simple-pattern", extra_args=f"'.*[0-9]\\.jpg$' '{artefacts.LINUX.src}'"
-    ),
+    Benchmark(name="simple-pattern", extra_args=f"'.*[0-9]\\.jpg$' . 'alloy'"),
     Benchmark(
         name="simple-pattern-HI",
-        extra_args=f"-HI '.*[0-9]\\.jpg$' '{artefacts.LINUX.src}'",
+        extra_args=f"-HI '.*[0-9]\\.jpg$' 'alloy'",
     ),
     Benchmark(
-        name="file-extension", extra_args=f"-HI --extension jpg '{artefacts.LINUX.src}'"
+        name="file-extension",
+        extra_args=f"-HI --extension jpg . 'alloy'",
     ),
-    Benchmark(name="file-type", extra_args=f"-HI --type l '{artefacts.LINUX.src}'"),
-    Benchmark(
-        name="command-execution", extra_args=f"'ab' '{artefacts.LINUX.src}' --exec echo"
-    ),
+    Benchmark(name="file-type", extra_args=f"-HI --type l . 'alloy'"),
+    Benchmark(name="command-execution", extra_args=f"'ab' 'alloy' --exec echo"),
     Benchmark(
         name="command-execution-large-output",
-        extra_args=f"-tf 'ab' '{artefacts.LINUX.src}' --exec echo",
+        extra_args=f"-tf 'ab' 'alloy' --exec echo",
     ),
-]
+)
 
 SOM = (
     Benchmark("Richards", 1),
@@ -85,11 +83,31 @@ SOM = (
     Benchmark("Mandelbrot", 50),
 )
 
-ALACRITTY_ARGS = f"""-e bash -c \"[ ! -f {artefacts.VTE_BENCH.src / 'benchmarks' / '%(benchmark)s' / 'setup'} ] || {artefacts.VTE_BENCH.src / 'benchmarks' / '%(benchmark)s' / 'setup'} && {artefacts.VTE_BENCH.src / 'benchmarks' / '%(benchmark)s' / 'benchmark'}\""""
+GRMTOOLS = (
+    Benchmark("eclipse", str(artefacts.SRC_DIR / "eclipse")),
+    Benchmark("hadoop", str(artefacts.SRC_DIR / "hadoop")),
+    Benchmark("spring", str(artefacts.SRC_DIR / "spring")),
+    Benchmark("jenkins", str(artefacts.SRC_DIR / "jenkins")),
+)
 
-FD_ARGS = ""
+RIPGREP = (
+    Benchmark(
+        "linux_alternates",
+    ),
+    Benchmark("linux_alternates_casei"),
+    Benchmark("linux_literal"),
+    Benchmark("linux_literal_casei"),
+    Benchmark("linux_literal_casei_mmap"),
+    Benchmark("linux_literal_default"),
+    Benchmark("linux_literal_mmap"),
+    Benchmark("linux_re_literal_suffix"),
+    Benchmark("linux_unicode_greek"),
+    Benchmark("linux_unicode_greek_casei"),
+    Benchmark("linux_unicode_word_1"),
+    Benchmark("linux_unicode_word_2"),
+    Benchmark("linux_word"),
+)
 
 
-SOMRS_ARGS = f"""-c {artefacts.SOMRS_AST.src}/core-lib/Smalltalk {artefacts.SOMRS_AST.src}/core-lib/Examples/Benchmarks {artefacts.SOMRS_AST.src}/core-lib/Examples/Benchmarks/Richards {artefacts.SOMRS_AST.src}/core-lib/Examples/Benchmarks/DeltaBlue {artefacts.SOMRS_AST.src}/core-lib/Examples/Benchmarks/NBody {artefacts.SOMRS_AST.src}/core-lib/Examples/Benchmarks/Json {artefacts.SOMRS_AST.src}/core-lib/Examples/Benchmarks/GraphSearch {artefacts.SOMRS_AST.src}/core-lib/Examples/Benchmarks/LanguageFeatures -- BenchmarkHarness %(benchmark)s %(iterations)s"""
-
-YKSOM_ARGS = f"""--cp {artefacts.YKSOM.src}/SOM/Smalltalk:{artefacts.YKSOM.src}/SOM/Examples/Benchmarks/Richards:{artefacts.YKSOM.src}/SOM/Examples/Benchmarks/DeltaBlue:{artefacts.YKSOM.src}/SOM/Examples/Benchmarks/NBody:{artefacts.YKSOM.src}/SOM/Examples/Benchmarks/Json:{artefacts.YKSOM.src}/SOM/Examples/Benchmarks/GraphSearch:{artefacts.YKSOM.src}/SOM/Examples/Benchmarks/LanguageFeatures {artefacts.YKSOM.src}/SOM/Examples/Benchmarks/BenchmarkHarness.som %(benchmark)s %(iterations)s"""
+BINARY_TREES = (Benchmark("binary_trees", 14),)
+REGEX_REDUX = (Benchmark("regex_redux", "0 < redux_input.txt"),)

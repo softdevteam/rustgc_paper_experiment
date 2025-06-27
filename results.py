@@ -1,6 +1,7 @@
 #! /usr/bin/env python
 
 import glob
+import os
 import re
 import warnings
 from dataclasses import dataclass
@@ -15,9 +16,55 @@ import pandas as pd
 from matplotlib.ticker import FuncFormatter, ScalarFormatter
 from scipy import stats
 
-from build import Experiment
+from build import BenchmarkSuite, Experiment
+
+PLOT_DIR = Path("plots")
 
 warnings.simplefilter(action="ignore", category=FutureWarning)
+
+
+def arithmean(series):
+    n = len(series)
+    mean = series.mean()
+    std_err = series.std(ddof=1) / (n**0.5)  # Standard error
+    margin_of_error = stats.t.ppf((1 + 0.99) / 2, df=n - 1) * std_err  # t-score * SE
+    return pd.Series(
+        {
+            "arithmean": mean,
+            "arithmean_ci": margin_of_error,
+            "arithmean_lower": mean - margin_of_error,
+            "arithmean_upper": mean + margin_of_error,
+        }
+    )
+
+
+def geomean(series):
+    clean_vals = series.dropna()
+    n = len(clean_vals)
+
+    if n == 0 or (clean_vals <= 0).any():
+        return pd.Series([0] * 3, index=["gmean", "gmean_lower", "gmean_upper"])
+
+        log_vals = np.log(clean_vals)
+        mean_log = np.mean(log_vals)
+        std_log = np.std(log_vals, ddof=1)  # Sample standard deviation
+
+        if n == 1:
+            return pd.Series(
+                [np.exp(mean_log), np.nan, np.nan],
+                index=["gmean", "gmean_lower", "gmean_upper"],
+            )
+
+        sem_log = std_log / np.sqrt(n)
+        t_crit = stats.t.ppf((1 + 0.99) / 2, df=n - 1)
+
+        ci_log = (mean_log - t_crit * sem_log, mean_log + t_crit * sem_log)
+
+        # Convert back to original scale
+        return pd.Series(
+            [np.exp(mean_log), np.exp(ci_log[0]), np.exp(ci_log[1])],
+            index=["gmean", "gmean_lower", "gmean_upper"],
+        )
 
 
 def bytes_formatter(max_value):
@@ -71,33 +118,101 @@ matplotlib.rcParams.update(
 )
 
 
+class SummarizeWith(Enum):
+    GMEAN = "gmean"
+    ARITHMEAN = "arithmean"
+
+    @property
+    def lower(self):
+        return f"{self.value}_lower"
+
+    @property
+    def upper(self):
+        return f"{self.value}_upper"
+
+
 class Criterea(Enum):
+    def __init__(self, value, mean_kind=SummarizeWith.GMEAN, latex=None, desc=None):
+        self._value_ = value
+        self.mean_kind = mean_kind
+        self.latex = latex
+        self.desc = desc
+
+    @classmethod
+    def _missing_(cls, value):
+        for member in cls:
+            if member.value == value:
+                return member
+        return None
+
+    @property
+    def lower(self):
+        return f"{self.mean_kind.value}_lower"
+
+    @property
+    def upper(self):
+        return f"{self.mean_kind.value}_upper"
+
+    @property
+    def mean(self):
+        return f"{self.mean_kind.value}"
+
+    @property
+    def ratio(self):
+        return f"{self.mean_kind.value}_ratio"
+
+    @property
+    def ratio_lower(self):
+        return f"{self.mean_kind.value}_ratio_ci_high"
+
+    @property
+    def ratio_upper(self):
+        return f"{self.mean_kind.value}_ratio_ci_low"
+
+    @property
+    def is_significant(self):
+        return f"{self.mean_kind.value}_significant"
+
     COLLECTION_NUMBER = "collection_number"
-    COLLECTION_KIND = "kind"
+    TOTAL_COLLECTIONS = "total_collections"
+    PHASE = "kind"
     HEAP_SIZE_ON_ENTRY = "heap_size_on_entry"
-    TIME_MARKING_MS = "time_marking_ms"
-    TIME_MARKING_NS = "time_marking_ns"
+    TIME_MARKING = "time_marking"
     BYTES_FREED = "bytes_freed"
+    HEAP_GREW = "heap_grew"
     LIVE_OBJECTS_WITH_FINALIZERS = "live_objects_with_finalizers"
     OBJECTS_IN_FINALIZER_QUEUE = "objects_in_finalizer_queue"
-    TIME_FINALIZER_QUEUE_MS = "time_fin_q_ms"
-    TIME_FINALIZER_QUEUE_NS = "time_fin_q_ns"
-    TIME_SWEEPING_MS = "time_sweeping_ms"
-    TIME_SWEEPING_NS = "time_sweeping_ns"
-    TIME_TOTAL_MS = "time_total_ms"
-    TIME_TOTAL_NS = "time_total_ns"
+    TIME_FINALIZER_QUEUE = "time_fin_q"
+    TIME_SWEEPING = "time_sweeping"
+    TIME_TOTAL = "time_total"
     FINALIZERS_RUN = "finalizers_run"
     FINALIZERS_REGISTERED = "finalizers_registered"
     ALLOCATED_GC = "allocated_gc"
     ALLOCATED_ARC = "allocated_arc"
     ALLOCATED_RC = "allocated_rc"
     ALLOCATED_BOXED = "allocated_boxed"
-    GC_ALLOCS = "allocated_gc"
-    RC_ALLOCS = "allocated_rc"
-    ARC_ALLOCS = "allocated_arc"
-    BOX_ALLOCS = "allocated_box"
-    WALLCLOCK = "total"
-    USER = "usr"
+
+    TOTAL_FINALIZERS_RUN = "total_finalizers_run"
+    TOTAL_FINALIZERS_REGISTERED = "total_finalizers_registered"
+    TOTAL_ALLOCATED_GC = "total_allocated_gc"
+    TOTAL_ALLOCATED_ARC = "total_allocated_arc"
+    TOTAL_ALLOCATED_RC = "total_allocated_rc"
+    TOTAL_ALLOCATED_BOXED = "total_allocated_boxed"
+    TOTAL_LIVE_OBJECTS_WITH_FINALIZERS = "total_live_objects_with_finalizers"
+    TOTAL_OBJECTS_IN_FINALIZER_QUEUE = "total_objects_in_finalizer_queue"
+
+    WALLCLOCK = (
+        "total",
+        SummarizeWith.GMEAN,
+        "Wall-clock Time",
+        "Wall-clock time (ms). Lower is better.",
+    )
+    USER = (
+        "usr",
+        SummarizeWith.GMEAN,
+        "User Time",
+        "User time (ms). Lower is better.",
+    )
 
     def __lt__(self, other):
         return self.value < other.value
@@ -105,107 +220,168 @@ class Criterea(Enum):
 
 @dataclass
 class Results:
-    experiment: Experiment
     data: pd.DataFrame
+    _ameans: pd.DataFrame = None
+    _gmeans: pd.DataFrame = None
+
+    def __repr__(self):
+        return self.data.__repr__()
 
     @classmethod
-    def from_raw_data(cls, experiment):
-        # def to_executor(name):
-        #     for cfg in self.experiment.configurations():
-        #         if cfg.name == name:
-        #             return cfg
-        #     raise ValueError(f"Executor for {name} not found.")
+    def concat(cls, results):
+        data = [r.data for r in results]
+        res = cls.__new__(cls)
+        res.data = pd.concat(data, ignore_index=True)
+        return res
 
-        def to_benchmark(name):
-            for b in experiment.suite.benchmarks:
-                if b.name == name:
-                    return b
-            raise ValueError(f"Benchmark for {name} not found.")
+    @property
+    def ameans(self):
+        if not self._ameans:
+            self._ameans = self._arithmetic_mean(per_benchmark=True)
 
-        def to_criterion(name):
-            for b in experiment.suite.benchmarks:
-                if b.name == name:
-                    return b
-            raise ValueError(f"Benchmark for {name} not found.")
+        return self._ameans
 
-        raw = pd.read_csv(
-            experiment.results,
-            sep="\t",
-            comment="#",
-            index_col="suite",
-            converters={"criterion": Criterea, "benchmark": to_benchmark},
+    @property
+    def gmeans(self):
+        if self._gmeans:
+            return self._gmeans
+
+        self._gmeans = self._geometric_mean(per_benchmark=True)
+
+    def __init__(self, data):
+        self.data = data
+
+    def _arithmetic_mean(self, per_benchmark=None) -> "Results":
+        if per_benchmark is None:
+            raise ValueError("arg per_benchmark required")
+        cols = ["configuration", "criterion"]
+        if per_benchmark:
+            cols += ["benchmark"]
+        return (
+            self.data.copy()
+            .groupby(cols)["value"]
+            .apply(arithmean)
+            .unstack()
+            .reset_index()
         )
-        raw = raw.rename(columns={"executor": "configuration"}).reset_index()[
-            ["benchmark", "configuration", "value", "criterion"]
-        ]
-        return cls(experiment, raw)
+
+    def _geometric_mean(self, per_benchmark=None) -> "ExperimentData":
+        if per_benchmark is None:
+            raise ValueError("arg per_benchmark required")
+        cols = ["configuration", "criterion"]
+        if per_benchmark:
+            cols + ["benchmark"]
+
+        return (
+            self.data.copy()
+            .groupby(cols)["value"]
+            .apply(geomean)
+            .unstack()
+            .reset_index()
+        )
 
     def summary(self):
         return Summary(self)
 
-    def geometric_mean(self) -> "Results":
-        def with_99_cis(series):
-            clean_vals = series.dropna()
-            n = len(clean_vals)
-
-            if n == 0 or (clean_vals <= 0).any():
-                return pd.Series([0] * 3, index=["value", "lower", "upper"])
-
-            log_vals = np.log(clean_vals)
-            mean_log = np.mean(log_vals)
-            std_log = np.std(log_vals, ddof=1)  # Sample standard deviation
-
-            if n == 1:
-                return pd.Series(
-                    [np.exp(mean_log), np.nan, np.nan],
-                    index=["value", "lower", "upper"],
-                )
-
-            sem_log = std_log / np.sqrt(n)
-            t_crit = stats.t.ppf((1 + 0.99) / 2, df=n - 1)
-
-            ci_log = (mean_log - t_crit * sem_log, mean_log + t_crit * sem_log)
-
-            # Convert back to original scale
-            return pd.Series(
-                [np.exp(mean_log), np.exp(ci_log[0]), np.exp(ci_log[1])],
-                index=["value", "lower", "upper"],
-            )
+    def geometric_mean(self, per_benchmark=False) -> "ExperimentData":
+        cols = ["configuration", "criterion"]
+        if per_benchmark:
+            cols + ["benchmark"]
 
         data = (
             self.data.copy()
-            .groupby(["configuration", "criterion"])["value"]
-            .apply(with_99_cis)
+            .groupby(cols)["value"]
+            .apply(geomean)
             .unstack()
             .reset_index()
         )
         return Results(experiment=self.experiment, data=data)
 
-    def arithmetic_mean(self) -> "Results":
-        def with_99_cis(series):
-            n = len(series)
-            mean = series.mean()
-            std_err = series.std(ddof=1) / (n**0.5)  # Standard error
-            margin_of_error = (
-                stats.t.ppf((1 + 0.99) / 2, df=n - 1) * std_err
-            )  # t-score * SE
-            return pd.Series(
-                {
-                    "mean": mean,
-                    "ci": margin_of_error,
-                    "lower": mean - margin_of_error,
-                    "upper": mean + margin_of_error,
-                }
-            )
-
+    def arithmetic_mean(self, per_benchmark=True) -> "Results":
+        cols = ["configuration", "criterion"]
+        if per_benchmark:
+            cols += ["benchmark"]
         data = (
             self.data.copy()
-            .groupby(["configuration", "benchmark", "criterion"])["value"]
-            .apply(with_99_cis)
+            .groupby(cols)["value"]
+            .apply(arithmean)
             .unstack()
             .reset_index()
         )
         return Results(experiment=self.experiment, data=data)
+
+    def plot_bar(self, index, x=None, y=None, opts=None, mean=SummarizeWith.ARITHMEAN):
+        # Get the single metric name
+        metric = y
+        if index == "benchmark":
+            suite = self.data["suite"].iloc[0].name
+            filename = f"{suite}-{metric.latex.lower().replace(' ', '-')}.svg"
+        else:
+            filename = f"summary-{metric.latex.lower().replace(' ', '-')}.svg"
+
+        os.makedirs(self.outdir, exist_ok=True)
+        df = self.ameans.copy()
+        df = df[df["criterion"] == metric]
+
+        pivot_df = df.pivot(
+            index=index, columns=x, values=[mean.value, mean.lower, mean.upper]
+        ).sort_index(ascending=False)
+
+        mean_df = pivot_df[mean.value]
+        lower_df = pivot_df[mean.lower]
+        upper_df = pivot_df[mean.upper]
+
+        lower_err = mean_df - lower_df
+        upper_err = upper_df - mean_df
+
+        fig, ax = plt.subplots(figsize=(max(12, mean_df.shape[0] * 0.4), 5))
+
+        indices = np.arange(len(mean_df.index))
+        bar_width = 0.25
+        col_names = mean_df.columns
+        ax.margins(x=0.01)
+
+        for i, col in enumerate(col_names):
+            ax.bar(
+                indices + i * bar_width,
+                mean_df[col].values,
+                bar_width,
+                yerr=[lower_err[col].values, upper_err[col].values],
+                capsize=4,
+                label=col.latex,
+                error_kw={"elinewidth": 1, "capthick": 1},
+            )
+
+        ax.set_ylabel(metric.desc)
+        ax.set_xticks(indices + bar_width)
+        ax.set_xticklabels(mean_df.index, rotation=90, ha="center", fontsize=8)
+        ax.yaxis.set_major_formatter(ScalarFormatter(useOffset=False))
+        ax.legend()
+
+        plt.tight_layout()
+        plt.savefig(self.outdir / filename, bbox_inches="tight")
+        plt.close()
+
+
+class PremOptResults(Results):
+
+    @property
+    def outdir(self):
+        return PLOT_DIR / "premopt"
+
+
+class GcvsResults(Results):
+
+    @property
+    def outdir(self):
+        return PLOT_DIR / "gcvs"
+
+
+class ElisionResults(Results):
+
+    @property
+    def outdir(self):
+        return PLOT_DIR / "elision"
 
 
 def plot_line(
@@ -247,121 +423,6 @@ def plot_line(
 
 
 class CollectionStats(Results):
-    @classmethod
-    def from_raw_data(cls, experiment):
-        with open(Path("gc.log"), "r") as f:
-            data = []
-            blocks = re.split(r"--> Marking for collection", f.read())
-
-            for block in blocks:
-                if not block.strip() or "#" not in block:
-                    continue
-
-                row = {}
-
-                if match := re.search(r"#(\d+) after (\d+) allocated bytes", block):
-                    row["collection"] = int(match.group(1))
-                    row["allocated_kib"] = int(match.group(2)) * 1024
-
-                if match := re.search(
-                    r"World-stopped marking took (\d+) ms (\d+) ns", block
-                ):
-                    ms = int(match.group(1))
-                    ns = int(match.group(2))
-                    row["marking_time_ms"] = ms + (ns / 1_000_000)
-
-                if match := re.search(
-                    r"freed (-?\d+) bytes, heap (\d+) KiB \(\+ (\d+) KiB unmapped \+ (\d+) KiB internal\)",
-                    block,
-                ):
-                    row["freed_kib"] = int(match.group(1)) * 1024
-                    row["heap_kib"] = int(match.group(2))
-                    row["unmapped_kib"] = int(match.group(3))
-                    row["internal_kib"] = int(match.group(4))
-
-                if match := re.search(
-                    r"In-use heap: (\d+)% \((\d+) KiB pointers \+ (\d+) KiB other\)",
-                    block,
-                ):
-                    row["heap_usage_percent"] = int(match.group(1))
-
-                if match := re.search(r"(\d+) finalization entries", block):
-                    row["fin_entry"] = int(match.group(1))
-
-                if match := re.search(r"(\d+) finalization-ready objects", block):
-                    row["moved_to_finq"] = int(match.group(1))
-
-                if match := re.search(
-                    r"Finalize and initiate sweep took (\d+) ms (\d+) ns \+ (\d+) ms (\d+) ns",
-                    block,
-                ):
-                    ms1 = int(match.group(1))
-                    ns1 = int(match.group(2))
-                    ms2 = int(match.group(3))
-                    ns2 = int(match.group(4))
-                    row["finalize_time"] = ms1 + (ns1 / 1_000_000)
-                    row["sweep_initiate_time"] = ms2 + (ns2 / 1_000_000)
-                    row["total_finalize_sweep"] = (
-                        row["finalize_time"] + row["sweep_initiate_time"]
-                    )
-
-                if match := re.search(
-                    r"Complete collection took (\d+) ms (\d+) ns", block
-                ):
-                    ms = int(match.group(1))
-                    ns = int(match.group(2))
-                    row["total_collection_time"] = ms + (ns / 1_000_000)
-
-                if match := re.search(r"Grew fo table to (\d+) entries", block):
-                    row["fo_table_size"] = int(match.group(1))
-
-                row["is_full_collection"] = "full world-stop" in block
-
-                if row:
-                    data.append(row)
-
-            df = pd.DataFrame(data)
-
-            # Now make this the same layout as the existing perf/mem dataframes
-            # so we can re-use the same stats code on this.
-            long_rows = []
-            for _, row in df.iterrows():
-                collection_num = row["collection"]
-                is_full = row["is_full_collection"]
-
-                for col in df.columns:
-                    if col in ["collection", "is_full_collection"]:
-                        continue
-
-                    value = row[col]
-                    if pd.isna(value):
-                        continue
-
-                    if "bytes" in col:
-                        unit = "KiB"
-                    elif "kib" in col:
-                        unit = "KiB"
-                    elif "time" in col or col.endswith("_ms"):
-                        unit = "ms"
-                    elif "percent" in col:
-                        unit = "%"
-                    elif any(
-                        word in col for word in ["entries", "objects", "links", "size"]
-                    ):
-                        unit = "count"
-                    else:
-                        unit = ""
-
-                    long_rows.append(
-                        {
-                            "collection number": collection_num,
-                            "criterion": col,
-                            "value": value,
-                            "unit": unit,
-                            "is_full_collection": is_full,
-                        }
-                    )
-            return cls(data=pd.DataFrame(long_rows))
 
     @property
     def raw(self):
@@ -399,18 +460,20 @@ class Summary(Results):
 
     def __init__(self, results: Results, base="static"):
         self.raw_data = results.data
-        self.means = results.arithmetic_mean().data
+        self.ameans = results.arithmetic_mean().data
         self.gmeans = results.geometric_mean().data
         self.config_map = self._create_config_map(results)
 
         # Build the summary data
+        print(self.ameans)
         best_worst = self._calculate_best_worst()
-        gmean_ratios = self._calculate_gmean_ratios()
+        # gmean_ratios = self._calculate_gmean_ratios()
 
+        ratios = self._calculate_mean_ratios()
         # Final merge
         self.data = self.gmeans.merge(
             best_worst, on=["configuration", "criterion"], how="outer"
-        ).merge(gmean_ratios, on=["configuration", "criterion"], how="outer")
+        ).merge(ratios, on=["configuration", "criterion"], how="outer")
         self.data["suite"] = results.experiment.suite.name
         self.data["experiment"] = results.experiment.name
 
@@ -434,23 +497,23 @@ class Summary(Results):
         return res.confidence_interval.low, res.confidence_interval.high
 
     def _prepare_comparison_data(self):
-        means_with_baseline = self.means.merge(self.config_map, on="configuration")
-        baseline_data = self.means.rename(
+        means_with_baseline = self.ameans.merge(self.config_map, on="configuration")
+        baseline_data = self.ameans.rename(
             columns={
                 "configuration": "baseline",
-                "mean": "mean_b",
-                "lower": "lower_b",
-                "upper": "upper_b",
+                "arithmean": "arithmean_b",
+                "arithmean_lower": "arithmean_lower_b",
+                "arithmean_upper": "arithmean_upper_b",
             }
         )
 
         m = means_with_baseline.merge(
             baseline_data, on=["benchmark", "criterion", "baseline"]
         )
-        m["pct"] = (m["mean"] - m["mean_b"]) / m["mean_b"] * 100
-        m["ratio"] = m["mean"] / m["mean_b"]
+        m["ratio"] = m["arithmean"] / m["arithmean_b"]
         m["significant"] = ~(
-            (m["lower"] <= m["upper_b"]) & (m["upper"] >= m["lower_b"])
+            (m["arithmean_lower"] <= m["arithmean_upper_b"])
+            & (m["arithmean_upper"] >= m["arithmean_lower_b"])
         )
 
         return m
@@ -472,25 +535,18 @@ class Summary(Results):
         config_vals = config_data["value"].values
         baseline_vals = baseline_data["value"].values
 
-        pct_low, pct_high = self._bootstrap_ci(
-            config_vals,
-            baseline_vals,
-            lambda c, b, axis=None: (np.mean(c, axis=axis) - np.mean(b, axis=axis))
-            / np.mean(b, axis=axis)
-            * 100,
-        )
         ratio_low, ratio_high = self._bootstrap_ci(
             config_vals,
             baseline_vals,
             lambda c, b, axis=None: np.mean(c, axis=axis) / np.mean(b, axis=axis),
         )
 
-        return pct_low, pct_high, ratio_low, ratio_high
+        return ratio_low, ratio_high
 
     def _add_bootstrap_cis(self, sig):
         ci_data = []
         for _, row in sig.iterrows():
-            pct_low, pct_high, ratio_low, ratio_high = self._bootstrap_benchmark_cis(
+            ratio_low, ratio_high = self._bootstrap_benchmark_cis(
                 row["configuration"],
                 row["baseline"],
                 row["criterion"],
@@ -499,8 +555,6 @@ class Summary(Results):
 
             ci_data.append(
                 {
-                    "pct_ci_low": pct_low,
-                    "pct_ci_high": pct_high,
                     "ratio_ci_low": ratio_low,
                     "ratio_ci_high": ratio_high,
                 }
@@ -514,38 +568,26 @@ class Summary(Results):
                 {
                     "worst": "None",
                     "best": "None",
-                    "worst_pct": 0,
                     "worst_ratio": 1.0,
-                    "worst_pct_ci_low": np.nan,
-                    "worst_pct_ci_high": np.nan,
                     "worst_ratio_ci_low": np.nan,
                     "worst_ratio_ci_high": np.nan,
-                    "best_pct": 0,
                     "best_ratio": 1.0,
-                    "best_pct_ci_low": np.nan,
-                    "best_pct_ci_high": np.nan,
                     "best_ratio_ci_low": np.nan,
                     "best_ratio_ci_high": np.nan,
                 }
             )
 
-        worst_row = group.loc[group["pct"].idxmax()]
-        best_row = group.loc[group["pct"].idxmin()]
+        worst_row = group.loc[group["ratio"].idxmax()]
+        best_row = group.loc[group["ratio"].idxmin()]
 
         return pd.Series(
             {
                 "worst": worst_row["benchmark"],
-                "worst_pct": worst_row["pct"],
                 "worst_ratio": worst_row["ratio"],
-                "worst_pct_ci_low": worst_row["pct_ci_low"],
-                "worst_pct_ci_high": worst_row["pct_ci_high"],
                 "worst_ratio_ci_low": worst_row["ratio_ci_low"],
                 "worst_ratio_ci_high": worst_row["ratio_ci_high"],
                 "best": best_row["benchmark"],
-                "best_pct": -best_row["pct"],
                 "best_ratio": best_row["ratio"],
-                "best_pct_ci_low": best_row["pct_ci_low"],
-                "best_pct_ci_high": best_row["pct_ci_high"],
                 "best_ratio_ci_low": best_row["ratio_ci_low"],
                 "best_ratio_ci_high": best_row["ratio_ci_high"],
             }
@@ -565,21 +607,111 @@ class Summary(Results):
             .round(3)
         )
 
+    def _calculate_mean_ratios(self):
+        def process_mean(
+            means_df,
+            mean_col,
+            mean_func,
+            ratio_col,
+            ci_ratio_col_low,
+            ci_ratio_col_high,
+            sig_col,
+        ):
+            with_baseline = means_df.merge(self.config_map, on="configuration")
+            baseline = means_df.rename(
+                columns={"configuration": "baseline", mean_col: f"{mean_col}_b"}
+            )
+            merged = with_baseline.merge(baseline, on=["criterion", "baseline"])
+            merged[ratio_col] = merged[mean_col] / merged[f"{mean_col}_b"]
+
+            cis = []
+            for _, row in merged.iterrows():
+                config_data = self.raw_data[
+                    (self.raw_data["configuration"] == row["configuration"])
+                    & (self.raw_data["criterion"] == row["criterion"])
+                ]
+                baseline_data = self.raw_data[
+                    (self.raw_data["configuration"] == row["baseline"])
+                    & (self.raw_data["criterion"] == row["criterion"])
+                ]
+                config_vals = config_data["value"].values
+                baseline_vals = baseline_data["value"].values
+
+                ratio_low, ratio_high = self._bootstrap_ci(
+                    config_vals,
+                    baseline_vals,
+                    lambda c, b, axis=None: mean_func(c, axis=axis)
+                    / mean_func(b, axis=axis),
+                )
+                cis.append(
+                    {
+                        "criterion": row["criterion"],
+                        "configuration": row["configuration"],
+                        ratio_col: row[ratio_col],
+                        ci_ratio_col_low: ratio_low,
+                        ci_ratio_col_high: ratio_high,
+                        sig_col: not (ratio_low <= 1.0 <= ratio_high),
+                    }
+                )
+            return pd.DataFrame(cis)
+
+        # Process geometric mean
+        print(self.gmeans)
+        gmeans = self.gmeans[
+            self.gmeans["criterion"].apply(lambda x: x.mean_kind == SummarizeWith.GMEAN)
+        ]
+        ameans = self.ameans[
+            self.ameans["criterion"].apply(
+                lambda x: x.mean_kind == SummarizeWith.ARITHMEAN
+            )
+        ]
+        print(len(self.ameans))
+        print(len(ameans))
+
+        gmean_df = (
+            process_mean(
+                means_df=gmeans,
+                mean_col="gmean",
+                mean_func=stats.gmean,
+                ratio_col="gmean_ratio",
+                ci_ratio_col_low="gmean_ratio_ci_low",
+                ci_ratio_col_high="gmean_ratio_ci_high",
+                sig_col="gmean_significant",
+            )
+            if not gmeans.empty
+            else pd.DataFrame()
+        )
+
+        arithmean_df = (
+            process_mean(
+                means_df=ameans,
+                mean_col="arithmean",
+                mean_func=np.mean,
+                ratio_col="arithmean_ratio",
+                ci_ratio_col_low="arithmean_ratio_ci_low",
+                ci_ratio_col_high="arithmean_ratio_ci_high",
+                sig_col="arithmean_significant",
+            )
+            if not ameans.empty
+            else pd.DataFrame()
+        )
+
+        # Merge results on criterion/configuration
+        merged = pd.merge(
+            gmean_df, arithmean_df, on=["criterion", "configuration"], how="outer"
+        )
+        return merged.round(3)
+
     def _calculate_gmean_ratios(self):
         gmean_with_baseline = self.gmeans.merge(self.config_map, on="configuration")
         gmean_baseline = self.gmeans.rename(
-            columns={"configuration": "baseline", "value": "value_b"}
+            columns={"configuration": "baseline", "gmean": "gmean_b"}
         )
         gmean_merged = gmean_with_baseline.merge(
             gmean_baseline, on=["criterion", "baseline"]
         )
 
-        gmean_merged["gmean_ratio"] = gmean_merged["value"] / gmean_merged["value_b"]
-        gmean_merged["gmean_pct"] = (
-            (gmean_merged["value"] - gmean_merged["value_b"])
-            / gmean_merged["value_b"]
-            * 100
-        )
+        gmean_merged["gmean_ratio"] = gmean_merged["gmean"] / gmean_merged["gmean_b"]
 
         gmean_cis = []
         for _, row in gmean_merged.iterrows():
@@ -595,15 +727,6 @@ class Summary(Results):
             config_vals = config_data["value"].values
             baseline_vals = baseline_data["value"].values
 
-            pct_low, pct_high = self._bootstrap_ci(
-                config_vals,
-                baseline_vals,
-                lambda c, b, axis=None: (
-                    stats.gmean(c, axis=axis) - stats.gmean(b, axis=axis)
-                )
-                / stats.gmean(b, axis=axis)
-                * 100,
-            )
             ratio_low, ratio_high = self._bootstrap_ci(
                 config_vals,
                 baseline_vals,
@@ -615,11 +738,8 @@ class Summary(Results):
                     "criterion": row["criterion"],
                     "configuration": row["configuration"],
                     "gmean_ratio": row["gmean_ratio"],
-                    "gmean_pct": row["gmean_pct"],
                     "gmean_ratio_ci_low": ratio_low,
                     "gmean_ratio_ci_high": ratio_high,
-                    "gmean_pct_ci_low": pct_low,
-                    "gmean_pct_ci_high": pct_high,
                     "gmean_significant": not (ratio_low <= 1.0 <= ratio_high),
                 }
             )
@@ -628,16 +748,10 @@ class Summary(Results):
 
     def without_errs(self):
         error_cols = [
-            "worst_pct_ci_low",
-            "worst_pct_ci_high",
             "worst_ratio_ci_low",
             "worst_ratio_ci_high",
-            "best_pct_ci_low",
-            "best_pct_ci_high",
             "best_ratio_ci_low",
             "best_ratio_ci_high",
-            "gmean_pct_ci_low",
-            "gmean_pct_ci_high",
             "gmean_ratio_ci_high",
             "gmean_ratio_ci_low",
         ]
@@ -653,57 +767,169 @@ class Summary(Results):
 
 
 @dataclass
-class SuiteData:
-    suite: BenchmarkSuite
-    data: pd.DataFrame
+class SuiteData(Results):
+    def __init__(self, suite):
+        self.data = self._parse_perf(suite)
+        # per_gc, totals = self._parse_metrics(suite)
+        #
+        # self.collector_data = per_gc
+        # self.data = pd.concat([self.data, totals], ignore_index=True)
 
-    def _arithmetic_mean(df):
-        def with_99_cis(series):
-            n = len(series)
-            mean = series.mean()
-            std_err = series.std(ddof=1) / (n**0.5)  # Standard error
-            margin_of_error = (
-                stats.t.ppf((1 + 0.99) / 2, df=n - 1) * std_err
-            )  # t-score * SE
-            return pd.Series(
-                {
-                    "mean": mean,
-                    "ci": margin_of_error,
-                    "lower": mean - margin_of_error,
-                    "upper": mean + margin_of_error,
+    @property
+    def premopt(self):
+        from build import ExperimentProfile, PremOpt
+
+        def to_premopt(val):
+            try:
+                return PremOpt(val)
+            except ValueError:
+                return np.nan
+
+        df = self.data.copy()
+        df["configuration"] = df["configuration"].map(to_premopt)
+        df = df.dropna(subset="configuration")
+        return PremOptResults(df)
+
+    @property
+    def gcvs(self):
+        from build import GCVS, ExperimentProfile
+
+        def to_gcvs(val):
+            try:
+                return GCVS(val)
+            except ValueError:
+                return np.nan
+
+        df = self.data.copy()
+        df["configuration"] = df["configuration"].map(to_gcvs)
+        df = df.dropna(subset="configuration")
+        return GcvsResults(df)
+
+    @property
+    def elision(self):
+        from build import Elision, ExperimentProfile
+
+        def to_elision(val):
+            try:
+                return Elision(val)
+            except ValueError:
+                return np.nan
+
+        df = self.data.copy()
+        df["configuration"] = df["configuration"].map(to_elision)
+        df = df.dropna(subset="configuration")
+        return ElisionResults(df)
+
+    def _process_metric_csv(self, f, suite):
+        path = Path(f)
+        benchmark = [
+            b for b in suite.benchmarks if b.name.lower() == path.stem.split("-")[-1]
+        ][0]
+        configuration = f"{suite.name}-{'-'.join(path.stem.split('-')[:-1])}"
+
+        # Read CSV with only non-numeric column specified
+        df = pd.read_csv(f, dtype={Criterea.PHASE: "string"})
+        df = df[~(df == df.columns).all(axis=1)]
+        df.columns = [Criterea._value2member_map_.get(c, c) for c in df.columns]
+
+        # Convert all columns except non-numeric to numeric
+        numeric_cols = [col for col in df.columns if col != Criterea.PHASE]
+        df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors="coerce")
+
+        # Process bytes_freed and heap_grew
+        df[Criterea.HEAP_GREW] = 0
+        negative_mask = df[Criterea.BYTES_FREED] < 0
+        df.loc[negative_mask, Criterea.HEAP_GREW] = -df.loc[
+            negative_mask, Criterea.BYTES_FREED
+        ]
+        df.loc[negative_mask, Criterea.BYTES_FREED] = 0
+
+        # Process time columns
+        time_cols = [
+            Criterea.TIME_MARKING,
+            Criterea.TIME_SWEEPING,
+            Criterea.TIME_FINALIZER_QUEUE,
+            Criterea.TIME_TOTAL,
+        ]
+        for col in time_cols:
+            ms_col, ns_col = f"{col.value}_ms", f"{col.value}_ns"
+            df[col] = df[ms_col] + df[ns_col] / 1_000_000
+        df = df.drop(
+            columns=[f"{c.value}_{u}" for c in time_cols for u in ("ms", "ns")]
+        )
+
+        # Process collection numbers
+        df[Criterea.COLLECTION_NUMBER] = pd.to_numeric(
+            df[Criterea.COLLECTION_NUMBER], errors="coerce"
+        )
+
+        # Create invocation counter
+        sentinel = df[Criterea.COLLECTION_NUMBER] == -1
+        df["invocation"] = sentinel.cumsum().shift(fill_value=0).astype(int) + 1
+
+        # Process per-collection data
+        per_collection = df[df[Criterea.COLLECTION_NUMBER] != -1].copy()
+        total_collections = (
+            per_collection.groupby("invocation")[Criterea.COLLECTION_NUMBER]
+            .max()
+            .reset_index()
+            .rename(columns={Criterea.COLLECTION_NUMBER: "value"})
+        )
+        total_collections["criterion"] = Criterea.TOTAL_COLLECTIONS
+
+        # Process summary metrics
+        drop_cols = [
+            Criterea.PHASE,
+            Criterea.TIME_TOTAL,
+            Criterea.TIME_MARKING,
+            Criterea.TIME_SWEEPING,
+            Criterea.HEAP_SIZE_ON_ENTRY,
+            Criterea.COLLECTION_NUMBER,
+            Criterea.TIME_FINALIZER_QUEUE,
+            Criterea.BYTES_FREED,
+            Criterea.HEAP_GREW,
+        ]
+        # Filter out potentially missing columns
+        drop_cols = [col for col in drop_cols if col in df.columns]
+
+        totals = (
+            df[sentinel]
+            .drop(columns=drop_cols)
+            .rename(
+                columns={
+                    Criterea.ALLOCATED_ARC: Criterea.TOTAL_ALLOCATED_ARC,
+                    Criterea.ALLOCATED_BOXED: Criterea.TOTAL_ALLOCATED_BOXED,
+                    Criterea.ALLOCATED_RC: Criterea.TOTAL_ALLOCATED_RC,
+                    Criterea.ALLOCATED_GC: Criterea.TOTAL_ALLOCATED_GC,
+                    Criterea.FINALIZERS_REGISTERED: Criterea.TOTAL_FINALIZERS_REGISTERED,
+                    Criterea.FINALIZERS_RUN: Criterea.TOTAL_FINALIZERS_RUN,
+                    Criterea.OBJECTS_IN_FINALIZER_QUEUE: Criterea.TOTAL_OBJECTS_IN_FINALIZER_QUEUE,
+                    Criterea.LIVE_OBJECTS_WITH_FINALIZERS: Criterea.TOTAL_LIVE_OBJECTS_WITH_FINALIZERS,
                 }
             )
-
-        data = (
-            df
-            .groupby(["configuration", "benchmark", "criterion"])["value"]
-            .apply(with_99_cis)
-            .unstack()
-            .reset_index()
+            .melt(id_vars=["invocation"], var_name="criterion", value_name="value")
         )
-        return data
+        totals = pd.concat([totals, total_collections], ignore_index=True)
 
-    @classmethod
-    def from_raw_data(cls, suite, measurement):
-        # def to_executor(name):
-        #     for cfg in self.experiment.configurations():
-        #         if cfg.name == name:
-        #             return cfg
-        #     raise ValueError(f"Executor for {name} not found.")
-
-        raw = pd.read_csv(
-            suite.raw_data(measurement),
-            sep="\t",
-            comment="#",
-            index_col="suite",
-            converters={"criterion": Criterea, "benchmark": to_benchmark},
+        # Final per-collection processing
+        per_collection = per_collection.drop(columns=[Criterea.PHASE]).melt(
+            id_vars=[Criterea.COLLECTION_NUMBER, "invocation"],
+            var_name="criterion",
+            value_name="value",
         )
-        raw = raw.rename(columns={"executor": "configuration"}).reset_index()[
-            ["benchmark", "configuration", "value", "criterion"]
-        ]
-        return cls(suite, raw)
+        per_collection["value"] = pd.to_numeric(
+            per_collection["value"], errors="coerce"
+        )
 
-    def __init__(self, suite, measurements):
+        # Add metadata
+        for df_part in [per_collection, totals]:
+            df_part["benchmark"] = benchmark
+            df_part["configuration"] = configuration
+            df_part["suite"] = suite
+
+        return per_collection, totals
+
+    def _parse_perf(self, suite):
         from build import Metric
 
         def to_benchmark(name):
@@ -711,170 +937,41 @@ class SuiteData:
                 if b.name.lower() == name.lower():
                     return b
             raise ValueError(f"Benchmark for {name} not found.")
-        perf = pd.DataFrame()
 
-        if Metric.PERF in measurements:
-            file = suite.raw_data(Metric.PERF)
-            if file.exists():
-                perf = pd.read_csv(
-                    file,
-                    sep="\t",
-                    comment="#",
-                    index_col="suite",
-                    converters={"criterion": Criterea, "benchmark": to_benchmark},
-                )
-                perf = perf.rename(columns={"executor": "configuration"}).reset_index()[
-                    ["benchmark", "configuration", "value", "criterion","invocation"]
-                ]
-                # print(perf)
-                self.data = perf
-
-    def summary(self):
-        return Summary(self)
-
-    def for_experiment(self, experiment) -> "ExperimentData":
-        df = self.data.copy()
-        df = df[
-            df["configuration"].isin([cfg.name for cfg in experiment.configurations()])
+        file = suite.raw_data(Metric.PERF)
+        if not file.exists():
+            return pd.DataFrame()
+        df = pd.read_csv(
+            file,
+            sep="\t",
+            comment="#",
+            index_col="suite",
+            converters={
+                "criterion": Criterea,
+                "benchmark": to_benchmark,
+            },
+        )
+        df = df.rename(columns={"executor": "configuration"}).reset_index()[
+            ["benchmark", "configuration", "value", "criterion", "invocation"]
         ]
-        return ExperimentData(experiment, df)
+        df["suite"] = suite
+        return df
 
-    def geometric_mean(self) -> "Results":
-        def with_99_cis(series):
-            clean_vals = series.dropna()
-            n = len(clean_vals)
+    def _parse_metrics(self, suite):
+        from build import Metric
 
-            if n == 0 or (clean_vals <= 0).any():
-                return pd.Series([0] * 3, index=["value", "lower", "upper"])
-
-            log_vals = np.log(clean_vals)
-            mean_log = np.mean(log_vals)
-            std_log = np.std(log_vals, ddof=1)  # Sample standard deviation
-
-            if n == 1:
-                return pd.Series(
-                    [np.exp(mean_log), np.nan, np.nan],
-                    index=["value", "lower", "upper"],
-                )
-
-            sem_log = std_log / np.sqrt(n)
-            t_crit = stats.t.ppf((1 + 0.99) / 2, df=n - 1)
-
-            ci_log = (mean_log - t_crit * sem_log, mean_log + t_crit * sem_log)
-
-            # Convert back to original scale
-            return pd.Series(
-                [np.exp(mean_log), np.exp(ci_log[0]), np.exp(ci_log[1])],
-                index=["value", "lower", "upper"],
-            )
-
-        data = (
-            self.data.copy()
-            .groupby(["configuration", "criterion"])["value"]
-            .apply(with_99_cis)
-            .unstack()
-            .reset_index()
+        csvs = glob.glob(str(suite.raw_data(Metric.METRICS).parent / "*.csv"))
+        gc_metrics, summary_metrics = [], []
+        for f in csvs:
+            per_collection, totals = self._process_metric_csv(f, suite)
+            gc_metrics.append(per_collection)
+            summary_metrics.append(totals)
+        return pd.concat(gc_metrics, ignore_index=True), pd.concat(
+            summary_metrics, ignore_index=True
         )
-        return Results(experiment=self.experiment, data=data)
-
-    def arithmetic_mean(self) -> "Results":
-        def with_99_cis(series):
-            n = len(series)
-            mean = series.mean()
-            std_err = series.std(ddof=1) / (n**0.5)  # Standard error
-            margin_of_error = (
-                stats.t.ppf((1 + 0.99) / 2, df=n - 1) * std_err
-            )  # t-score * SE
-            return pd.Series(
-                {
-                    "mean": mean,
-                    "ci": margin_of_error,
-                    "lower": mean - margin_of_error,
-                    "upper": mean + margin_of_error,
-                }
-            )
-
-        data = (
-            self.data.copy()
-            .groupby(["configuration", "benchmark", "criterion"])["value"]
-            .apply(with_99_cis)
-            .unstack()
-            .reset_index()
-        )
-        return Results(experiment=self.experiment, data=data)
-
-
-@dataclass
-class ExperimentData:
-    experiment: Experiment
-    data: pd.DataFrame
 
     def summary(self):
         return Summary(self)
-
-    def geometric_mean(self) -> "Results":
-        def with_99_cis(series):
-            clean_vals = series.dropna()
-            n = len(clean_vals)
-
-            if n == 0 or (clean_vals <= 0).any():
-                return pd.Series([0] * 3, index=["value", "lower", "upper"])
-
-            log_vals = np.log(clean_vals)
-            mean_log = np.mean(log_vals)
-            std_log = np.std(log_vals, ddof=1)  # Sample standard deviation
-
-            if n == 1:
-                return pd.Series(
-                    [np.exp(mean_log), np.nan, np.nan],
-                    index=["value", "lower", "upper"],
-                )
-
-            sem_log = std_log / np.sqrt(n)
-            t_crit = stats.t.ppf((1 + 0.99) / 2, df=n - 1)
-
-            ci_log = (mean_log - t_crit * sem_log, mean_log + t_crit * sem_log)
-
-            # Convert back to original scale
-            return pd.Series(
-                [np.exp(mean_log), np.exp(ci_log[0]), np.exp(ci_log[1])],
-                index=["value", "lower", "upper"],
-            )
-
-        data = (
-            self.data.copy()
-            .groupby(["configuration", "criterion"])["value"]
-            .apply(with_99_cis)
-            .unstack()
-            .reset_index()
-        )
-        return Results(experiment=self.experiment, data=data)
-
-    def arithmetic_mean(self) -> "Results":
-        def with_99_cis(series):
-            n = len(series)
-            mean = series.mean()
-            std_err = series.std(ddof=1) / (n**0.5)  # Standard error
-            margin_of_error = (
-                stats.t.ppf((1 + 0.99) / 2, df=n - 1) * std_err
-            )  # t-score * SE
-            return pd.Series(
-                {
-                    "mean": mean,
-                    "ci": margin_of_error,
-                    "lower": mean - margin_of_error,
-                    "upper": mean + margin_of_error,
-                }
-            )
-
-        data = (
-            self.data.copy()
-            .groupby(["configuration", "benchmark", "criterion"])["value"]
-            .apply(with_99_cis)
-            .unstack()
-            .reset_index()
-        )
-        return Results(experiment=self.experiment, data=data)
 
 
 @dataclass
@@ -929,7 +1026,7 @@ class Overall:
             for crit in criteria_list:
                 crit_df = suites[suites["criterion"] == crit]
                 best_configs[crit] = crit_df.loc[
-                    crit_df["value"].idxmin(), "configuration"
+                    crit_df[crit.mean].idxmin(), "configuration"
                 ]
 
             cfgs = suites["configuration"].drop_duplicates().to_list()
@@ -942,20 +1039,16 @@ class Overall:
                     row = config_rows[config_rows["criterion"] == crit].iloc[0]
 
                     if i == 0:  # Baseline
-                        val = fmt_float(row["value"], bold=(c == best_configs[crit]))
-                        ci = fmt_ci(row["lower"], row["upper"])
+                        val = fmt_float(row[crit.mean], bold=(c == best_configs[crit]))
+                        ci = fmt_ci(row[crit.lower], row[crit.upper])
                     else:  # Other rows
                         val = (
-                            fmt_float(
-                                row["gmean_ratio"], bold=(c == best_configs[crit])
-                            )
+                            fmt_float(row[crit.ratio], bold=(c == best_configs[crit]))
                             + "×"
                         )
-                        if not row["gmean_significant"]:
+                        if not row[crit.is_significant]:
                             val += r"\textsuperscript{\dag}"
-                        ci = fmt_ci(
-                            row["gmean_ratio_ci_low"], row["gmean_ratio_ci_high"]
-                        )
+                        ci = fmt_ci(row[crit.ratio_lower], row[crit.ratio_upper])
 
                     row_data.extend([val, ci])
 
@@ -968,4 +1061,3 @@ class Overall:
 
         with open("plots/suites.tex", "w") as f:
             f.write("\n".join(lines))
-

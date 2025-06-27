@@ -1,13 +1,10 @@
 import logging
 import os
-import shutil
 import subprocess
-from contextlib import ExitStack
 from dataclasses import asdict, dataclass
-from enum import Enum, auto
-from itertools import product
+from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, NamedTuple, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 import yaml
 
@@ -25,6 +22,7 @@ def double_quoted_str_representer(dumper, data):
 
 
 yaml.add_representer(DoubleQuotedStr, double_quoted_str_representer)
+
 
 REBENCH_EXEC = Path(".venv/bin/rebench").resolve()
 REBENCH_CONF = Path("rebench.conf").resolve()
@@ -67,7 +65,11 @@ class ExperimentProfile(Enum):
             Experiment(tuple(set(cls) & set(suite.profiles)), m, suite, pexecs)
             for suite in BenchmarkSuite.all()
             for m in cls.measurements
+            if not set(cls).isdisjoint(set(suite.profiles))
         ]
+
+    def __lt__(self, other):
+        return self.value < other.value
 
 
 class GCVS(ExperimentProfile):
@@ -82,6 +84,17 @@ class GCVS(ExperimentProfile):
     @property
     def measurements(cls):
         return [Metric.PERF]
+
+    @classmethod
+    def _missing_(cls, value):
+        exp = cls.__name__.lower()
+
+        for member in cls:
+            if f"{exp}-{member.value}" in value:
+                return member
+            elif "default" in value:
+                return cls.GC
+        return None
 
 
 class PremOpt(ExperimentProfile):
@@ -105,6 +118,17 @@ class PremOpt(ExperimentProfile):
     def measurements(cls):
         return [Metric.PERF, Metric.METRICS]
 
+    @classmethod
+    def _missing_(cls, value):
+        exp = cls.__name__.lower()
+
+        for member in cls:
+            if f"{exp}-{member.value}" in value:
+                return member
+            elif "default" in value:
+                return cls.OPT
+        return None
+
 
 class Elision(ExperimentProfile):
     NAIVE = ("naive", "No elision", {"finalizer-elision": False})
@@ -115,12 +139,102 @@ class Elision(ExperimentProfile):
     def measurements(cls):
         return [Metric.PERF, Metric.METRICS]
 
+    @classmethod
+    def _missing_(cls, value):
+        exp = cls.__name__.lower()
+
+        for member in cls:
+            if f"{exp}-{member.value}" in value:
+                return member
+            elif "default" in value:
+                return cls.OPT
+        return None
+
+
+def cargo_build(c, src, outdir, install_dir, build_artefact, bin, env=None):
+    src = Path(src)
+    outdir = Path(outdir)
+    install_dir = Path(install_dir)
+
+    install_dir.mkdir(parents=True, exist_ok=True)
+    target_bin_dir = outdir / "release"
+
+    install_path = install_dir / bin
+    if install_path.exists():
+        logging.info(f"{install_path} already exists. Skipping...")
+        return
+
+    logging.info(f"Building {install_path} from {src})")
+
+    build_cmd = [
+        "cargo",
+        "build",
+        "--release",
+        "--target-dir",
+        str(outdir),
+        "--bin",
+        build_artefact,
+    ]
+
+    with c.cd(str(src)):
+        try:
+            c.run(" ".join(build_cmd), env=env)
+        except Exception as e:
+            logging.error(f"Failed to build {src}: {e}")
+            raise
+
+    # Create symlinks for newly built binaries
+    source_path = target_bin_dir / build_artefact
+    target_path = install_dir / bin
+
+    if not source_path.exists():
+        logging.warning(f"Built binary {source_path} not found after build")
+        return
+
+    try:
+        if target_path.is_symlink():
+            target_path.unlink()
+
+        os.symlink(source_path.absolute(), target_path)
+        logging.info(f"Symlinked {source_path} -> {target_path}")
+    except OSError as e:
+        logging.error(f"Failed to create symlink for {bin}: {e}")
+        raise
+
+    logging.info(f"Successfully installed {source_path} --> {target_path}")
+
+
+def has_unstaged_changes(c, directory):
+    with c.cd(directory):
+        result = c.run("git diff --quiet", warn=True)
+        return result.exited != 0
+
+
+def patch_repo(c, repo_path, patch_file):
+    repo_path = Path(repo_path)
+    patch_file = Path(patch_file)
+    logging.info(f"Attempting to patch: {repo_path}")
+
+    with c.cd(str(repo_path)):
+        # Reset to clean state
+        logging.info("Resetting repository to HEAD...")
+        c.run("git reset --hard HEAD")
+
+        if not patch_file.exists():
+            logging.info(f"No patch file exists: {patch_file}. Skipping..")
+        else:
+            # Apply the patch
+            logging.info(f"Applying patch: {patch_file}")
+            c.run(f"git apply {patch_file.absolute()}")
+
+            logging.info("Patch applied successfully")
+
 
 @dataclass(frozen=True)
 class BenchmarkSuite:
     name: str
     crate: Crate
-    cmd_args: str
+    remove: str
     benchmarks: Tuple["Benchmark"]
     gcvs: Optional[Tuple[ExperimentProfile]] = None
     deps: Optional[Tuple[Crate]] = ()
@@ -131,6 +245,9 @@ class BenchmarkSuite:
     def path(self) -> Path:
         pass
 
+    def __repr__(self):
+        return self.name
+
     @property
     def latex(self) -> str:
         return f"\\{self.name.replace('-','')}"
@@ -139,7 +256,7 @@ class BenchmarkSuite:
     def results(self):
         from results import SuiteData
 
-        results = SuiteData(self, [Metric.PERF, Metric.METRICS])
+        results = SuiteData(self)
         return results
 
     def raw_data(self, measurement) -> Path:
@@ -147,7 +264,11 @@ class BenchmarkSuite:
 
     @property
     def args(self) -> str:
-        return self.cmd_args
+        return str(self.cmd_args)
+
+    @property
+    def cmd_args(self) -> str:
+        return ""
 
     @property
     def profiles(self) -> tuple[ExperimentProfile]:
@@ -160,46 +281,170 @@ class BenchmarkSuite:
     @classmethod
     def all(cls) -> Set["BenchmarkSuite"]:
         return {
-            # BenchmarkSuite(
-            #     "alacritty",
-            #     ALACRITTY,
-            #     benchmarks.ALACRITTY_ARGS,
-            #     benchmarks.ALACRITTY,
-            #     [GCVS.ARC],
-            #     deps=[VTE_BENCH],
-            #     setup=[
-            #         "Xvfb",
-            #         ":99",
-            #         "-screen",
-            #         "0",
-            #         "1280x800x24",
-            #         "-nolisten",
-            #         "tcp",
-            #     ],
-            #     teardown=True,
-            # ),
-            # BenchmarkSuite(
-            #     "fd", FD, benchmarks.FD_ARGS, benchmarks.FD, [GCVS.ARC], deps=[LINUX]
-            # ),
-            # BenchmarkSuite(RIPGREP, [GCVS.ARC], "ripgrep"),
-            BenchmarkSuite(
+            Grmtools(
+                "grmtools", "", "", benchmarks=benchmarks.GRMTOOLS, gcvs=(GCVS.RC,)
+            ),
+            BinaryTrees(
+                "binary_trees",
+                "",
+                "",
+                benchmarks.BINARY_TREES,
+                (GCVS.ARC, GCVS.TYPED_ARENA, GCVS.BASELINE, GCVS.RUST_GC),
+            ),
+            RegexRedux(
+                "regex_redux",
+                "",
+                "",
+                benchmarks.REGEX_REDUX,
+                (GCVS.ARC,),
+            ),
+            RipGrep(
+                "ripgrep",
+                "",
+                "",
+                benchmarks.RIPGREP,
+                (GCVS.ARC,),
+            ),
+            Alacritty(
+                "alacritty",
+                "",
+                "",
+                benchmarks.ALACRITTY,
+                (GCVS.ARC,),
+                setup=(
+                    "Xvfb",
+                    ":99",
+                    "-screen",
+                    "0",
+                    "1280x800x24",
+                    "-nolisten",
+                    "tcp",
+                ),
+                teardown=True,
+            ),
+            FdFind("fd", "", "", benchmarks.FD, (GCVS.ARC,)),
+            SomrsAST(
                 "som-rs-ast",
-                SOMRS_AST,
-                benchmarks.SOMRS_ARGS,
+                "",
+                "",
                 benchmarks.SOM,
                 (GCVS.RC,),
             ),
-            BenchmarkSuite(
-                "som-rs-bc", SOMRS_BC, benchmarks.SOMRS_ARGS, benchmarks.SOM, (GCVS.RC,)
+            SomrsBC("som-rs-bc", "", "", benchmarks.SOM, (GCVS.RC,)),
+            YkSOM(
+                "yksom",
+                "",
+                "",
+                benchmarks.SOM,
             ),
-            # BenchmarkSuite("yksom", YKSOM, benchmarks.YKSOM_ARGS, benchmarks.SOM),
-            # BenchmarkSuite(
-            #     "grmtools",
-            #     PARSER_BENCH,
-            #     [GCVS.RC],
-            #     deps=[GRMTOOLS, CACTUS, REGEX],
-            # ),
         }
+
+
+class Grmtools(BenchmarkSuite):
+    JAVA_SRCS = (
+        Repo(
+            name="jenkins",
+            shallow_clone=True,
+            url="https://github.com/jenkinsci/jenkins",
+            version="master",
+        ),
+        Repo(
+            name="spring",
+            shallow_clone=True,
+            url="https://github.com/spring-projects/spring-framework",
+            version="master",
+        ),
+        Repo(
+            name="hadoop",
+            shallow_clone=True,
+            url="https://github.com/apache/hadoop",
+            version="master",
+        ),
+        Repo(
+            name="eclipse",
+            shallow_clone=True,
+            url="https://github.com/eclipse-platform/eclipse.platform",
+            version="master",
+        ),
+    )
+
+    GRMTOOLS = Repo(
+        name="grmtools",
+        url="https://github.com/softdevteam/grmtools",
+        version="a0972be0777e599a3dbca710fb0a595c39560b69",
+    )
+
+    ERRORGEN = Path(SRC_DIR / "errorgen")
+
+    PARSERBENCH = Path(SRC_DIR / "parserbench")
+
+    REGEX = Repo(
+        name="regex",
+        url="https://github.com/rust-lang/regex",
+        version="bcbe40342628b15ab2543d386c745f7f0811b791",
+    )
+
+    CACTUS = Repo(
+        name="cactus",
+        url="https://github.com/softdevteam/cactus",
+        version="8d34c207e1479cecf0b9b2f7beb1a0c22c8949ad",
+    )
+
+    def build(self, c, target_dir, install_dir, bench_cfg_bin, profile, env):
+        for repo in self.JAVA_SRCS:
+            repo.fetch()
+
+        cargo_build(
+            c,
+            self.ERRORGEN,
+            BUILD_DIR / "aux/errorgen",
+            BIN_DIR / "aux/errorgen",
+            "errorgen",
+            "errorgen",
+        )
+
+        for repo in self.JAVA_SRCS:
+            if has_unstaged_changes(c, repo.src):
+                logging.info(
+                    f"{repo.name} sources have already had parser-errors introduced. Skipping..."
+                )
+                continue
+            with c.cd(repo.src):
+                c.run(str(BIN_DIR / "aux" / "errorgen" / "errorgen") + " " + repo.name)
+
+        patch_repo(c, self.GRMTOOLS.src, PATCH_DIR / "grmtools.diff")
+
+        gc_cfgs = [
+            "default",
+            "premopt-opt",
+            "premopt-none",
+            "premopt-naive",
+            "elision-naive",
+            "elision-none",
+            "default-metrics",
+            "premopt-opt-metrics",
+            "premopt-none-metrics",
+            "premopt-naive-metrics",
+            "elision-naive-metrics",
+            "elision-none-metrics",
+        ]
+        if any(profile in s for s in gc_cfgs):
+            patch_repo(c, self.REGEX.src, PATCH_DIR / "regex.gc.diff")
+            patch_repo(c, self.CACTUS.src, PATCH_DIR / "cactus.gc.diff")
+        else:
+            patch = profile.split("-")[-1]
+            patch_repo(c, self.REGEX.src, PATCH_DIR / f"regex.{patch}.diff")
+            patch_repo(c, self.CACTUS.src, PATCH_DIR / f"cactus.{patch}.diff")
+
+        cargo_build(
+            c,
+            self.PARSERBENCH,
+            target_dir,
+            install_dir,
+            build_artefact="parserbench",
+            bin=bench_cfg_bin,
+            env=env,
+        )
 
 
 @dataclass(frozen=True)
@@ -281,16 +526,348 @@ class Experiment:
         assert all([x.experiment == expected for x in self.profiles])
         return self.profiles[0].experiment
 
-    def process(self):
-        from results import Results
+    @property
+    def name(self) -> str:
+        return f"{self.suite.name}-{self.experiment}-{self.measurement.value}"
 
-        if not self.results.exists():
-            logging.info(f"No results to process for {self.name}")
-            return
+    @property
+    def build_steps(self) -> int:
+        return sum([cfg.steps for cfg in self.configurations(only_missing=True)])
 
 
-        # print(plotter.mem_measurements)
-        # print(plotter.wallclock)
+class BinaryTrees(BenchmarkSuite):
+    BINARY_TREES = Path(SRC_DIR / "binary_trees")
+
+    def build(self, c, target_dir, install_dir, bench_cfg_bin, profile, env):
+        if profile == "baseline":
+            profile = "arc"
+        elif profile not in {"gc", "typed-arena", "rust-gc", "arc"}:
+            profile = "gc"
+        cargo_build(
+            c,
+            self.BINARY_TREES,
+            target_dir,
+            install_dir,
+            profile,
+            bench_cfg_bin,
+            env,
+        )
+
+
+class RegexRedux(BenchmarkSuite):
+    REGEX_REDUX = Path(SRC_DIR / "regex_redux")
+    FASTA = Path(SRC_DIR / "fasta")
+
+    REGEX = Repo(
+        name="regex",
+        url="https://github.com/rust-lang/regex",
+        version="bcbe40342628b15ab2543d386c745f7f0811b791",
+    )
+
+    def build(self, c, target_dir, install_dir, bench_cfg_bin, profile, env):
+        self.REGEX.fetch()
+
+        cargo_build(
+            c,
+            self.FASTA,
+            BUILD_DIR / "aux/fasta",
+            BIN_DIR / "aux/fasta",
+            "fasta",
+            "fasta",
+        )
+
+        redux_input = BIN_DIR / "aux" / "fasta" / "redux_input.txt"
+        if not redux_input.exists():
+            with c.cd(str(redux_input.parent)):
+                c.run(f"{str(redux_input.parent / 'fasta')} 2500000 > redux_input.txt")
+
+        patch_repo(c, self.REGEX.src, PATCH_DIR / f"regex.{profile}.diff")
+
+        cargo_build(
+            c,
+            self.REGEX_REDUX,
+            target_dir,
+            install_dir,
+            "regex_redux",
+            bench_cfg_bin,
+            env,
+        )
+
+        target_path = install_dir / "redux_input.txt"
+        if not target_path.exists():
+            os.symlink(redux_input.absolute(), target_path)
+            logging.info(f"Symlinked {redux_input} -> {target_path}")
+        else:
+            logging.warning(f"Symlink {target_path} already exists. Skipping...")
+
+
+class RipGrep(BenchmarkSuite):
+    RIPGREP = Repo(
+        name="ripgrep",
+        url="https://github.com/burntsushi/ripgrep",
+        version="de4baa10024f2cb62d438596274b9b710e01c59b",
+    )
+
+    LINUX = Repo(
+        name="linux",
+        url="https://github.com/BurntSushi/linux",
+        version="master",
+        shallow_clone=True,
+        post_checkout=(("make", "defconfig"), ("make", "-j100")),
+    )
+
+    @property
+    def cmd_args(self):
+        return (
+            f"-j1 $(cat {str(Path('aux/ripgrep_args').resolve())}/%(benchmark)s) {str(RipGrep.LINUX.src)}",
+        )
+
+    def build(self, c, target_dir, install_dir, bench_cfg_bin, profile, env):
+        self.LINUX.fetch()
+        self.RIPGREP.fetch()
+
+        if not (self.LINUX.src / ".config").exists():
+            with c.cd(str(self.LINUX.src)):
+                c.run(f"make defconfig")
+                c.run(f"make -j100")
+
+        patch_repo(c, self.RIPGREP.src, PATCH_DIR / f"ripgrep.{profile}.diff")
+
+        cargo_build(
+            c,
+            self.RIPGREP.src,
+            target_dir,
+            install_dir,
+            "rg",
+            bench_cfg_bin,
+            env,
+        )
+
+
+class SomrsAST(BenchmarkSuite):
+
+    SOMRS = Repo(
+        name="som-rs",
+        url="https://github.com/Hirevo/som-rs",
+        version="35b780cbee765cca24201fe063d3f1055ec7f608",
+        recursive=True,
+    )
+
+    BINARY_NAME = "som-interpreter-ast"
+
+    @property
+    def cmd_args(self):
+        return (
+            f"-c {self.SOMRS.src}/core-lib/Smalltalk "
+            f"{self.SOMRS.src}/core-lib/Examples/Benchmarks "
+            f"{self.SOMRS.src}/core-lib/Examples/Benchmarks/Richards "
+            f"{self.SOMRS.src}/core-lib/Examples/Benchmarks/DeltaBlue "
+            f"{self.SOMRS.src}/core-lib/Examples/Benchmarks/NBody "
+            f"{self.SOMRS.src}/core-lib/Examples/Benchmarks/Json "
+            f"{self.SOMRS.src}/core-lib/Examples/Benchmarks/GraphSearch "
+            f"{self.SOMRS.src}/core-lib/Examples/Benchmarks/LanguageFeatures "
+            f"-- BenchmarkHarness %(benchmark)s %(iterations)s"
+        )
+
+    def build(self, c, target_dir, install_dir, bench_cfg_bin, profile, env):
+        self.SOMRS.fetch()
+
+        patch_repo(c, self.SOMRS.src, PATCH_DIR / f"som-rs.{profile}.diff")
+
+        cargo_build(
+            c,
+            self.SOMRS.src,
+            target_dir,
+            install_dir,
+            self.BINARY_NAME,
+            bench_cfg_bin,
+            env,
+        )
+
+
+class SomrsBC(SomrsAST):
+    BINARY_NAME = "som-interpreter-bc"
+
+
+class YkSOM(BenchmarkSuite):
+    YKSOM = Repo(
+        name="yksom",
+        url="https://github.com/softdevteam/yksom",
+        version="master",
+        recursive=True,
+    )
+
+    @property
+    def cmd_args(self):
+        return (
+            f"--cp {self.YKSOM.src}/SOM/Smalltalk:"
+            f"{self.YKSOM.src}/SOM/Examples/Benchmarks/Richards:"
+            f"{self.YKSOM.src}/SOM/Examples/Benchmarks/DeltaBlue:"
+            f"{self.YKSOM.src}/SOM/Examples/Benchmarks/NBody:"
+            f"{self.YKSOM.src}/SOM/Examples/Benchmarks/Json:"
+            f"{self.YKSOM.src}/SOM/Examples/Benchmarks/GraphSearch:"
+            f"{self.YKSOM.src}/SOM/Examples/Benchmarks/LanguageFeatures "
+            f"{self.YKSOM.src}/SOM/Examples/Benchmarks/BenchmarkHarness.som "
+            f"%(benchmark)s %(iterations)s",
+        )
+
+    def build(self, c, target_dir, install_dir, bench_cfg_bin, profile, env):
+        self.YKSOM.fetch()
+        cargo_build(
+            c,
+            self.YKSOM.src,
+            target_dir,
+            install_dir,
+            "yksom",
+            bench_cfg_bin,
+            env,
+        )
+
+
+class FdFind(BenchmarkSuite):
+    FD = Repo(
+        name="fd",
+        url="https://github.com/sharkdp/fd",
+        version="a4fdad6ff781b5b496c837fde24001b0e46973d6",
+    )
+
+    @property
+    def cmd_args(self):
+        return "-j1"
+
+    def build(self, c, target_dir, install_dir, bench_cfg_bin, profile, env):
+        self.FD.fetch()
+        cargo_build(
+            c,
+            self.FD.src,
+            target_dir,
+            install_dir,
+            "fd",
+            bench_cfg_bin,
+            env,
+        )
+
+
+class Alacritty(BenchmarkSuite):
+    ALACRITTY = Repo(
+        name="alacritty",
+        url="https://github.com/alacritty/alacritty.git",
+        version="1063706f8e8a84139e5d2b464a4978e9d840ea17",
+    )
+
+    VTE_BENCH = Repo(
+        name="vtebench",
+        url="https://github.com/alacritty/vtebench.git",
+        version="c75155bfc252227c0efc101c1971df3e327c71c4",
+    )
+
+    @property
+    def cfg_args(self):
+        return (
+            f"-e bash -c \"[ ! -f {self.VTE_BENCH.src / 'benchmarks' / '%(benchmark)s' / 'setup'} ] || "
+            f"{self.VTE_BENCH.src / 'benchmarks' / '%(benchmark)s' / 'setup'} && "
+            f"{self.VTE_BENCH.src / 'benchmarks' / '%(benchmark)s' / 'benchmark'}\""
+        )
+
+    # @property
+    # def cfg_args(self):
+    #     return f"""-e bash -c \"[ ! -f {self.VTE_BENCH.src / 'benchmarks' / '%(benchmark)s' / 'setup'} ] || {self.VTE_BENCH.src / 'benchmarks' / '%(benchmark)s' / 'setup'} && {self.VTE_BENCH.src / 'benchmarks' / '%(benchmark)s' / 'benchmark'}\""""
+
+    def build(self, c, target_dir, install_dir, bench_cfg_bin, profile, env):
+        self.VTE_BENCH.fetch()
+        self.ALACRITTY.fetch()
+
+        patch_repo(c, self.ALACRITTY.src, PATCH_DIR / f"alacritty.{profile}.diff")
+
+        cargo_build(
+            c,
+            self.ALACRITTY.src,
+            target_dir,
+            install_dir,
+            "alacritty",
+            bench_cfg_bin,
+            env,
+        )
+
+
+@dataclass(frozen=True)
+class Experiment:
+    profiles: Tuple[ExperimentProfile]
+    measurement: Metric
+    suite: "BenchmarkSuite"
+    pexecs: int = 0
+
+    @property
+    def gauge_adapter(self) -> str:
+        return {"AlloyAdapter": "alloy_adapter.py"}
+
+    @command_runner(description="Benchmarking", allow_failure=True)
+    def _rebench(self, config, pexecs):
+        return [
+            str(REBENCH_EXEC),
+            "-R",
+            "-D",
+            "--invocations",
+            str(pexecs),
+            "--iterations",
+            "1",
+            config,
+            self.name,
+        ]
+
+    def run(self, c, pexecs, config):
+        self.results.parent.mkdir(parents=True, exist_ok=True)
+        if self.suite.setup:
+            setup = " ".join([str(x) for x in self.suite.setup])
+            logging.info(f"Running setup: {setup}")
+            setup_proc = subprocess.Popen(
+                self.suite.setup,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+
+        self._rebench(config, pexecs)
+
+        if self.suite.teardown:
+            logging.info(f"Killing setup proc: {setup_proc.pid}")
+            setup_proc.kill()
+            setup_proc.wait()
+            if not setup_proc.poll():
+                logging.error(f"Setup process {setup_proc.pid} still running!")
+            else:
+                logging.error(
+                    f"Setup process {setup_proc.pid} terminated with status ({setup_proc.poll()})"
+                )
+
+    def configurations(self, only_installed=False, only_missing=False):
+        if only_installed and only_missing:
+            raise ValueError("Can't select both only_installed and only_missing")
+
+        identical = [GCVS.GC, PremOpt.OPT, Elision.OPT]
+        executors = set()
+
+        for p in self.profiles:
+            name = "default" if p in identical else p.full
+            is_metrics = self.measurement == Metric.METRICS
+            alloy = Alloy(p, metrics=is_metrics)
+            executors.add(Executor(self, self.suite, self.measurement, name, alloy))
+
+        if only_installed:
+            executors = [self for self in executors if self.installed]
+        elif only_missing:
+            executors = [self for self in executors if not self.installed]
+        return executors
+
+    @property
+    def results(self) -> Path:
+        return RESULTS_DIR / self.suite.name / self.measurement.value / "results.data"
+
+    @property
+    def experiment(self):
+        expected = self.profiles[0].experiment
+
+        assert all([x.experiment == expected for x in self.profiles])
+        return self.profiles[0].experiment
 
     @property
     def name(self) -> str:
@@ -322,6 +899,29 @@ class Executor:
         return self.name < other.name
 
     @property
+    def baseline(self):
+        # Helper to safely get config or None
+        def get_config(config_id):
+            return next(
+                (e for e in self.experiment.configurations() if config_id in e.id), None
+            )
+
+        if self.experiment.experiment == "premopt":
+            return get_config("premopt-none")
+        elif self.experiment.experiment == "elision":
+            if "elision-naive" not in self.id:
+                return get_config("elision-naive")
+            else:
+                return get_config("default")
+        else:
+            if "default" not in self.id:
+                return get_config("default")
+            else:
+                arc = get_config("gcvs-arc")
+                rc = get_config("gcvs-rc")
+                return arc or rc
+
+    @property
     def install_prefix(self) -> Path:
         return BIN_DIR / "benchmarks" / self.suite.name
 
@@ -343,9 +943,14 @@ class Executor:
 
     @property
     def patch_suffix(self) -> Optional[str]:
-        if self.alloy.profile == GCVS.BASELINE:
-            return None
-        elif self.alloy.profile in [PremOpt.NAIVE, PremOpt.NONE, Elision.NAIVE]:
+        if self.alloy.profile in [
+            GCVS.GC,
+            PremOpt.NAIVE,
+            PremOpt.NONE,
+            PremOpt.OPT,
+            Elision.OPT,
+            Elision.NAIVE,
+        ]:
             return "gc"
         else:
             return self.alloy.profile.value
@@ -368,71 +973,79 @@ class Executor:
 
     @property
     def build_steps(self):
-        return self.suite.crate.steps
+        return 10
+        # return self.suite.crate.steps
 
-    def build(self):
-        if self.installed:
-            logging.info(
-                f"Skipping {self.name}: {os.path.relpath(self.path)} already exists"
-            )
-            return
-
-        self.suite.crate.repo.fetch()
-        logging.info(f"Starting build: {self.name}")
-        self.install_prefix.mkdir(parents=True, exist_ok=True)
-        self.build_dir.mkdir(parents=True, exist_ok=True)
-        for lib in self.suite.deps:
-            if lib.repo:
-                lib.repo.fetch()
-
-        with ExitStack() as patchstack:
-            crates = self.suite.deps + (self.suite.crate,)
-            [patchstack.enter_context(c.repo.patch(self.patch_suffix)) for c in crates]
-            self._cargo_build()
-            target_bin = self.build_dir / "release" / self.suite.crate.name
-            if not target_bin.exists():
-                print(str(target_bin))
-                raise BuildError(f"Build target does not exist")
-            logging.info(f"Symlinking {target_bin} -> {self.path}")
-            os.symlink(target_bin, self.path)
-
-        logging.info(
-            f"Build finished: {self.name}, installed at '{os.path.relpath(self.path)}'"
+    def build(self, c=None):
+        self.suite.build(
+            c,
+            self.build_dir,
+            self.install_prefix,
+            self.name,
+            self.patch_suffix,
+            env=self.env,
         )
-
-
-class CustomExperiment(Experiment):
-    _name: str
-    _configurations: List["CustomExecutor"]
-
-    def __init__(self, exp_name, suite, metric, cfgs, names):
-        # Call parent class constructor to initialize suite field
-        super().__init__([], suite, metric)
-
-        self._name = exp_name
-
-        # Initialize your custom configurations
-        self._configurations = [
-            CustomExecutor(self, suite, name, Path(cfg))
-            for cfg, name in zip(cfgs, names)
-        ]
-
-    def configurations(self) -> List["CustomExecutor"]:
-        return self._configurations
-
-    @property
-    def name(self) -> str:
-        return self._name
-
-    @property
-    def experiment(self):
-        return "custom"
-
-    @property
-    def results(self) -> Path:
-        return (
-            RESULTS_DIR / self.measurement.value / "custom" / f"{self.suite.name}.csv"
-        )
+        # if self.installed:
+        #     logging.info(
+        #         f"Skipping {self.name}: {os.path.relpath(self.path)} already exists"
+        #     )
+        #     return
+        #
+        # if self.suite.crate.repo:
+        #     self.suite.crate.repo.fetch()
+        # logging.info(f"Starting build: {self.name}")
+        # self.install_prefix.mkdir(parents=True, exist_ok=True)
+        # self.build_dir.mkdir(parents=True, exist_ok=True)
+        # for lib in self.suite.deps:
+        #     if lib.repo:
+        #         lib.repo.fetch()
+        #
+        # if self.suite.crate.name == "grmtools":
+        #     return
+        #
+        # if self.suite.crate.name == "binary_trees":
+        #     self._cargo_build()
+        #     if self.id in [
+        #         "gcvs-arc",
+        #         "gcvs-rust-gc",
+        #         "gcvs-typed-arena",
+        #     ]:
+        #         target_bin = (
+        #             self.build_dir / "release" / "-".join(self.id.split("-")[1:])
+        #         )
+        #     elif self.id == "gcvs-baseline":
+        #         target_bin = self.build_dir / "release" / "arc"
+        #     else:
+        #         target_bin = self.build_dir / "release" / "gc"
+        #     os.symlink(target_bin, self.path)
+        #     logging.info(f"Symlinking {target_bin} -> {self.path}")
+        #     logging.info(
+        #         f"Build finished: {self.name}, installed at '{os.path.relpath(self.path)}'"
+        #     )
+        #     return
+        #
+        # with ExitStack() as patchstack:
+        #     crates = self.suite.deps + (self.suite.crate,)
+        #     [
+        #         patchstack.enter_context(c.repo.patch(self.patch_suffix))
+        #         for c in crates
+        #         if c.repo is not None
+        #     ]
+        #     self._cargo_build()
+        #     target_bin = self.build_dir / "release" / self.suite.crate.name
+        #     if not target_bin.exists():
+        #         print(str(target_bin))
+        #         raise BuildError(f"Build target does not exist")
+        #     if self.suite.crate.name == "fd":
+        #         if not (self.install_prefix / "alloy").exists():
+        #             os.symlink(SRC_DIR / "alloy", self.install_prefix / "alloy")
+        #         logging.info(f"Symlinking alloy -> {self.install_prefix}")
+        #     logging.info(f"Symlinking {target_bin} -> {self.path}")
+        #     os.symlink(target_bin, self.path)
+        #
+        # logging.info(
+        #     f"Build finished: {self.name}, installed at '{os.path.relpath(self.path)}'"
+        # )
 
 
 @dataclass
@@ -463,24 +1076,26 @@ class Experiments:
         suite_exps = [e for e in self.experiments if e.experiment == exp_name]
         suites = set(e.suite for e in suite_exps)
 
-        all_exps = []
+        from results import Criterea, SuiteData
+
+        # results = SuiteData.concat([s.results for s in suites])
+        # premopt = results.premopt
+        # print(premopt)
 
         for s in suites:
-            raw = s.results
-            exps = [e for e in suite_exps if e.suite == s]
-            for e in exps:
-                if e.measurement == Metric.PERF and e.results.exists():
-                    results = raw.for_experiment(e)
-                    all_exps.append(results.summary().data)
-                    # print(e.name)
-                    # print()
-                    # print(data.summary().without_errs())
-                    # print()
-                    # print("=====")
-        from results import Overall
+            s.results.premopt.plot_bar(
+                "benchmark", x="configuration", y=Criterea.WALLCLOCK
+            )
+            s.results.premopt.plot_bar("benchmark", x="configuration", y=Criterea.USER)
 
-        overview = Overall(all_exps)
-        overview.mk_perf_table()
+            s.results.gcvs.plot_bar(
+                "benchmark", x="configuration", y=Criterea.WALLCLOCK
+            )
+            s.results.gcvs.plot_bar("benchmark", x="configuration", y=Criterea.USER)
+            s.results.elision.plot_bar(
+                "benchmark", x="configuration", y=Criterea.WALLCLOCK
+            )
+            s.results.elision.plot_bar("benchmark", x="configuration", y=Criterea.USER)
 
     def remove(self):
         for e in self.experiments:
@@ -524,9 +1139,18 @@ class Experiments:
                     {
                         "env": {
                             "GC_LOG_DIR": str(cfg.metrics_data),
-                            "LD_PRELOAD": str(
-                                cfg.alloy.install_prefix / "lib" / "libgc.so"
-                            ),
+                            "LD_PRELOAD": "/home/jake/testing/rustgc_paper_experiment/bdwgc/out/libgc.so",
+                        }
+                    }
+                )
+            else:
+                exec_part[cfg.name].update(
+                    {
+                        "env": {
+                            "LD_PRELOAD": "/home/jake/testing/rustgc_paper_experiment/bdwgc/out/libgc.so",
+                            # "LD_PRELOAD": str(
+                            #     cfg.alloy.install_prefix / "lib" / "libgc.so"
+                            # ),
                         }
                     }
                 )
@@ -540,7 +1164,7 @@ class Experiments:
 
             bm_part[e.suite.name] = {
                 "gauge_adapter": e.gauge_adapter,
-                "command": DoubleQuotedStr(e.suite.args),
+                "command": e.suite.args,
                 "benchmarks": [
                     (
                         bench.name
@@ -595,26 +1219,6 @@ class RebenchConfig:
     @property
     def gauge_adapter(self) -> str:
         return {"AlloyAdapter": "alloy_adapter.py"}
-
-    # def _add_suite(self, suite):
-    #     self.benchmark_suites = {
-    #         f"{suite.name}": {
-    #             "gauge_adapter": self.gauge_adapter,
-    #             "command": DoubleQuotedStr(suite.args),
-    #             "benchmarks": [
-    #                 (
-    #                     bench.name
-    #                     if bench.extra_args is None
-    #                     else {
-    #                         bench.name: {
-    #                             "extra_args": DoubleQuotedStr(bench.extra_args)
-    #                         }
-    #                     }
-    #                 )
-    #                 for bench in suite.benchmarks
-    #             ],
-    #         }
-    #     }
 
     @classmethod
     def from_custom(cls, suite, experiment_name, cfg_names, cfg_bins):

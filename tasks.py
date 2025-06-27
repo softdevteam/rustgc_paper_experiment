@@ -2,7 +2,7 @@ import os
 
 from invoke import task
 
-from build import BenchmarkSuite, CustomExperiment, Experiments, Metric
+from build import BenchmarkSuite, Experiments, Metric
 from util import timer
 
 
@@ -33,6 +33,14 @@ def _build_alloy(experiments: "Experiments", warn_if_empty=False):
             a.build()
 
 
+def list_exps(c):
+    r = Experiments.all()
+    es = r.experiments
+    for e in es:
+        for c in e.configurations():
+            print(f"{c.name} --> {c.baseline}")
+
+
 @task
 def build_alloy(c, experiments=None, measurements=None):
     """Build all alloy configurations"""
@@ -56,7 +64,7 @@ def build_benchmarks(c, experiments=None, suites=None, measurements=None):
     [print(f"  {cfg.name}") for cfg in cfgs]
     with timer("Building benchmark configurations", exps.build_steps):
         for cfg in cfgs:
-            cfg.build()
+            cfg.build(c=c)
 
 
 @task
@@ -77,43 +85,6 @@ def run_benchmarks(c, pexecs, experiments=None, suites=None, measurements=None):
 def process_benchmarks(c):
     # list_exps(c)
     exps = Experiments.all()
-    exps.process(c)
-
-
-@task(
-    help={
-        "suite": "The benchmark suite to run the comparison on.",
-        "cfg": "Path to configuration to test.",
-        "name": "Name of configuration to test.",
-    },
-    iterable=["cfg", "name"],
-)
-def compare(c, experiment_name, cfg, name, suite=None):
-    if not suite:
-        print(
-            "A benchmark suite must be provided with the '--suite' flag. Valid suites:"
-        )
-        for b in BenchmarkSuite.all():
-            print(b.name)
-        return
-
-    if not cfg:
-        raise ValueError("Configurations must be supplied with the --cfg flag")
-
-    if not name:
-        raise ValueError(
-            "Each configuration must be be supplied a name with the --name flag"
-        )
-
-    if len(cfg) != len(name):
-        raise ValueError(
-            "The number of provided configurations and names must be the same"
-        )
-
-    s = next((b for b in BenchmarkSuite.all() if b.name == suite))
-    e = CustomExperiment(experiment_name, s, Metric.PERF, cfg, name)
-    exps = Experiments(experiments=[e])
-    exps.run(c, 10)
     exps.process(c)
 
 
