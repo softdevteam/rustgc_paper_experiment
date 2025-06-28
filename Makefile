@@ -4,7 +4,7 @@ IMAGE := $(if $(FULL),full:latest,quick:latest)
 LOG_STAGE := log_export
 RUNTIME_STAGE := runtime
 RESULTS := $(CURDIR)/results
-LOGFILE := experiment.log
+LOGFILE := $(CURDIR)/experiment.log
 
 VENV_DIR := .venv
 VENV_PYTHON := $(VENV_DIR)/bin/python
@@ -38,22 +38,21 @@ define WITH_DOCKER
 		$(if $(SUITE_ARG),--build-arg SUITES=$(SUITE_ARG)) \
 		$(if $(MEASURE_ARG),--build-arg MEASUREMENTS=$(MEASURE_ARG)) \
 		--target runtime \
-		--tag $(IMAGE) \
+		--tag $2 \
 		--load .
 	@test -f $(LOGFILE) || touch $(LOGFILE)
 	chmod a+w $(LOGFILE)
 	docker run --rm -it \
-		--mount type=bind,source="$(LOGFILE)",target=/app/experiment.log \
 		--mount type=bind,source="$(RESULTS)",target=/app/results \
-		$(IMAGE)
+		$2
 endef
 
 
 run-quick:
-	$(call WITH_DOCKER,false)
+	$(call WITH_DOCKER,false,quick:latest)
 
 run-full:
-	$(call WITH_DOCKER,true)
+	$(call WITH_DOCKER,true,full:latext)
 
 tarball:
 	@echo "Compressing $(BIN_DIR) with maximum compression..."

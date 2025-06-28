@@ -1,5 +1,7 @@
 autotools-dev
 bison
+bc
+perl
 build-essential
 clang
 cmake
@@ -9,6 +11,8 @@ flex
 gdb
 git
 gperf
+fontconfig
+libfontconfig1-dev
 libboost-dev
 libboost-iostreams-dev
 libboost-program-options-dev

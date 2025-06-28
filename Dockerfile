@@ -27,13 +27,13 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
     apt-get update && \
-    apt-get -y install make build-essential curl git cmake python3.11 python3.11-venv python3.11-distutils python3-pip \
+    apt-get -y install make bc perl build-essential curl git cmake python3.11 python3.11-venv python3.11-distutils python3-pip \
     libtinfo-dev libzip-dev ninja-build gdb pipx rsync \
-    libdwarf-dev libunwind-dev libboost-dev libboost-iostreams-dev \
+    libdwarf-dev libunwind-dev libboost-dev libfontconfig1-dev fontconfig libboost-iostreams-dev \
     libboost-all-dev libboost-program-options-dev libboost-regex-dev zlib1g-dev zstd libelf-dev elfutils \
     libdw-dev pkg-config libssl-dev zlib1g-dev libzstd-dev liblzma-dev \
     libffi-dev libedit-dev llvm-dev clang procps autotools-dev xz-utils \
-    gperf bison flex xvfb
+    gperf bison flex xvfb time
 
 # Set Python 3.11 as default
 RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1 && \
@@ -67,12 +67,12 @@ RUN --mount=type=cache,target=/cache \
     ls -ls /app/artefacts/bin; \
     fi
 
-RUN  invoke build-alloy $EXPERIMENTS $MEASUREMENTS
+RUN  invoke build-benchmarks $EXPERIMENTS $SUITES $MEASUREMENTS
 
 FROM scratch as log_export
 COPY --from=build /app/experiment.log /docker-run-full.log
 
-FROM debian:latest as runtime
+FROM build as runtime
 
 ARG BUILD_QUICK=false
 ARG PEXECS
@@ -87,7 +87,10 @@ ENV SUITES=$SUITES
 ENV MEASUREMENTS=$MEASUREMENTS
 
 WORKDIR /app
-COPY --from=build /app/artefacts /app/artefacts
 
-CMD invoke run-benchmarks $PEXECS $EXPERIMENTS $SUITES $MEASUREMENTS
+RUN pip install --upgrade pip --break-system-packages && \
+    pip install .[dev] --break-system-packages
+
+RUN ls -la
+run invoke run-benchmarks $PEXECS $EXPERIMENTS $SUITES $MEASUREMENTS
 
