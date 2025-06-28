@@ -10,8 +10,7 @@ https://github.com/softdevteam/rustgc_paper.
 
 To quickly run the experiments using prebuilt binaries, first make sure your
 system meets the [requirements](#system-requirements-1) and has the necessary
-[dependencies](#dependencies-1) installed. Also, ensure that Docker is running
-before proceeding.
+[dependencies](#dependencies-1) installed.
 
 Then, execute the following commands:
 
