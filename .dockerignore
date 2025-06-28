@@ -5,3 +5,7 @@ plots/
 artefacts/
 src/
 !src/parserbench
+!src/binary_trees
+!src/regex_redux
+!src/errorgen
+!src/fasta
