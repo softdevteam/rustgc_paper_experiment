@@ -362,7 +362,12 @@ observed impact on the data.
 
 ### Experiment Modifications
 
-- We have pre-emptively included additional metrics that were requested by reviewers during the peer review process. Metrics highlighted in **bold** below were explicitly requested by reviewers; the others were added to improve the accuracy and completeness of comparisons.
+We have pre-emptively included additional metrics that were requested by
+reviewers during the peer review process. However, for some of these, we
+currently only have the raw data available. This will be updated before the
+paper revision deadline. Metrics highlighted in **bold** below were explicitly
+requested by reviewers; the others were added to improve the accuracy and
+completeness of comparisons.
 
   These include:
   - **Baseline allocator results for each benchmark suite**
@@ -386,11 +391,6 @@ Since the original submission, we have made several improvements to Alloy that m
 - The default global allocator is now set to BDWGC’s allocator automatically, so users no longer need to specify it with `#[global_allocator]`. While this change is unlikely to affect performance, we cannot completely rule it out
   [[PR #192](https://github.com/softdevteam/alloy/pull/192)]
 
-### Observed Differences in Results
-
-- *TODO:* Add a detailed explanation of which results were affected.
-
-This section will be updated with further details as the artefact evaluation progresses.
 
 ## A brief guide to the experiment process
 
