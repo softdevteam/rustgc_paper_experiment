@@ -17,7 +17,6 @@ BIN_ARCHIVE ?= artefacts-bin.tar.xz
 EXP_ARG := $(if $(strip $(EXPERIMENTS)),--experiments "$(EXPERIMENTS)")
 SUITE_ARG := $(if $(strip $(SUITES)),--suites $(SUITES))
 MEASURE_ARG := $(if $(strip $(MEASUREMENTS)),--measurements $(MEASUREMENTS))
-
 QUICK_PEXECS = 5
 FULL_PEXECS = 30
 
@@ -78,3 +77,6 @@ bare-metal: venv
 
 process: venv
 	@$(INVOKE) process-benchmarks
+
+build-paper:
+	docker build --progress=plain -f Dockerfile.paper --target export --output type=local,dest=./rustgc_paper -t rustgc-paper:latest .

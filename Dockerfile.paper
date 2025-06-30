@@ -1,0 +1,19 @@
+FROM jupyter/scipy-notebook:python-3.11 AS builder
+
+USER root
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    perl wget git fontconfig inkscape texlive-full make dbus-x11 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml ./
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install .[dev]
+
+RUN git clone https://github.com/softdevteam/rustgc_paper rustgc_paper
+WORKDIR /app/rustgc_paper
+RUN make
+
+FROM scratch AS export
+COPY --from=builder /app/rustgc_paper/ /
