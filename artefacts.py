@@ -199,6 +199,14 @@ ALLOY = Artefact(
     ),
 )
 
+LINUX = Repo(
+    name="linux",
+    url="https://github.com/BurntSushi/linux",
+    version="master",
+    shallow_clone=True,
+    post_checkout=(("make", "defconfig"), ("make", "-j100")),
+)
+
 
 class Alloy(Artefact):
     DEFAULT_FLAGS: ClassVar[Dict[str, bool]] = {

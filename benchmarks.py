@@ -35,27 +35,27 @@ ALACRITTY = (
 FD = (
     Benchmark(
         name="no-pattern",
-        extra_args=f"--hidden --no-ignore {artefacts.ALLOY.src}",
+        extra_args=f"--hidden --no-ignore . '{artefacts.LINUX.src}'",
     ),
     Benchmark(
-        name="simple-pattern", extra_args=f"'.*[0-9]\\.jpg$' . '{artefacts.ALLOY.src}'"
+        name="simple-pattern", extra_args=f"'.*[0-9]\\.jpg$' . '{artefacts.LINUX.src}'"
     ),
     Benchmark(
         name="simple-pattern-HI",
-        extra_args=f"-HI '.*[0-9]\\.jpg$' . '{artefacts.ALLOY.src}'",
+        extra_args=f"-HI '.*[0-9]\\.jpg$' . '{artefacts.LINUX.src}'",
     ),
     Benchmark(
         name="file-extension",
-        extra_args=f"-HI --extension jpg . '{artefacts.ALLOY.src}'",
+        extra_args=f"-HI --extension jpg . '{artefacts.LINUX.src}'",
     ),
-    Benchmark(name="file-type", extra_args=f"-HI --type l . '{artefacts.ALLOY.src}'"),
+    Benchmark(name="file-type", extra_args=f"-HI --type l . '{artefacts.LINUX.src}'"),
     Benchmark(
         name="command-execution",
-        extra_args=f"'ab' . '{artefacts.ALLOY.src}' --exec echo",
+        extra_args=f"'ab' . '{artefacts.LINUX.src}' --exec echo",
     ),
     Benchmark(
         name="command-execution-large-output",
-        extra_args=f"-tf 'ab' . '{artefacts.ALLOY.src}' --exec echo",
+        extra_args=f"-tf 'ab' . '{artefacts.LINUX.src}' --exec echo",
     ),
 )
 

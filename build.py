@@ -530,20 +530,12 @@ class RipGrep(BenchmarkSuite):
         version="de4baa10024f2cb62d438596274b9b710e01c59b",
     )
 
-    LINUX = Repo(
-        name="linux",
-        url="https://github.com/BurntSushi/linux",
-        version="master",
-        shallow_clone=True,
-        post_checkout=(("make", "defconfig"), ("make", "-j100")),
-    )
-
     @property
     def cmd_args(self):
         return f"-j1 $(cat {str(Path('aux/ripgrep_args').resolve())}/%(benchmark)s) {str(RipGrep.LINUX.src)}"
 
     def build(self, c, target_dir, install_dir, bench_cfg_bin, profile, env):
-        self.LINUX.fetch()
+        artefacts.LINUX.fetch()
         self.RIPGREP.fetch()
 
         if not (self.LINUX.src / ".config").exists():
@@ -657,7 +649,10 @@ class FdFind(BenchmarkSuite):
 
     def build(self, c, target_dir, install_dir, bench_cfg_bin, profile, env):
         self.FD.fetch()
-        ALLOY.repo.fetch()
+        LINUX.fetch()
+
+        patch_repo(c, self.FD.src, PATCH_DIR / f"fd.{profile}.diff")
+
         cargo_build(
             c,
             self.FD.src,
