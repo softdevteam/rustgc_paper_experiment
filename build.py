@@ -228,16 +228,6 @@ def has_unstaged_changes(c, directory):
         return result.exited != 0
 
 
-@contextmanager
-def xvfb_display(width=1280, height=720, colordepth=24, display=99):
-    xvfb = Xvfb(width=width, height=height, colordepth=colordepth, display=display)
-    try:
-        xvfb.start()
-        yield xvfb
-    finally:
-        xvfb.stop()
-
-
 def patch_repo(c, repo_path, patch_file):
     repo_path = Path(repo_path)
     patch_file = Path(patch_file)
@@ -693,16 +683,12 @@ class Alacritty(BenchmarkSuite):
     )
 
     @property
-    def cfg_args(self):
+    def cmd_args(self):
         return (
             f"-e bash -c \"[ ! -f {self.VTE_BENCH.src / 'benchmarks' / '%(benchmark)s' / 'setup'} ] || "
             f"{self.VTE_BENCH.src / 'benchmarks' / '%(benchmark)s' / 'setup'} && "
             f"{self.VTE_BENCH.src / 'benchmarks' / '%(benchmark)s' / 'benchmark'}\""
         )
-
-    # @property
-    # def cfg_args(self):
-    #     return f"""-e bash -c \"[ ! -f {self.VTE_BENCH.src / 'benchmarks' / '%(benchmark)s' / 'setup'} ] || {self.VTE_BENCH.src / 'benchmarks' / '%(benchmark)s' / 'setup'} && {self.VTE_BENCH.src / 'benchmarks' / '%(benchmark)s' / 'benchmark'}\""""
 
     def build(self, c, target_dir, install_dir, bench_cfg_bin, profile, env):
         self.VTE_BENCH.fetch()
@@ -747,7 +733,7 @@ class Experiment:
         ]
 
         if self.suite.name == "alacritty":
-            with Xvfb():
+            with Xvfb(display="99"):
                 c.run(" ".join(rebench_cmd), warn=True, pty=True)
         else:
             c.run(" ".join(rebench_cmd), warn=True, pty=True)
@@ -998,16 +984,13 @@ class Experiments:
                         "env": {
                             "GC_LOG_DIR": str(cfg.metrics_data),
                             "LD_PRELOAD": libgc,
+                            "DISPLAY": ":99",
                         }
                     }
                 )
             else:
                 exec_part[cfg.name].update(
-                    {
-                        "env": {
-                            "LD_PRELOAD": libgc,
-                        }
-                    }
+                    {"env": {"LD_PRELOAD": libgc, "DISPLAY": ":99"}}
                 )
 
         for e in self.experiments:

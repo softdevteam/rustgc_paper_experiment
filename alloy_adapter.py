@@ -52,7 +52,6 @@ class AlloyAdapter(GaugeAdapter):
         if "GC_LOG_DIR" in run_id.env:
             logdir = run_id.env["GC_LOG_DIR"]
             run_id.env["GC_LOG_FILE"] = f"{logdir}-{bm}.csv"
-        run_id.env["DISPLAY"] = ":99"
 
     def acquire_command(self, run_id):
         self.setup_stats(run_id)
