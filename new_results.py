@@ -1,8 +1,8 @@
 import glob
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
-import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -24,25 +24,42 @@ plt.rcParams.update(
         "axes.grid": True,
         "axes.labelcolor": "black",
         "text.color": "black",
-        "xtick.labelcolor": "black",  # These are needed because otherwise it's grey
+        "xtick.labelcolor": "black",
         "ytick.labelcolor": "black",
         "font.size": 8,
         "axes.spines.top": False,
         "axes.spines.right": False,
         "axes.titlesize": 8,
         "axes.labelsize": 8,
-        "legend.fontsize": 8,
+        "legend.fontsize": 6,
         "legend.frameon": False,
         "legend.columnspacing": 1.0,
-        "xtick.labelsize": 8,
+        "xtick.labelsize": 6,
         "ytick.labelsize": 6,
         "savefig.dpi": 300,
         "savefig.bbox": "tight",
+        "text.usetex": True,
+        "text.latex.preamble": r"""
+                \usepackage{contour}
+                \contourlength{0.5pt}
+                \renewcommand{\familydefault}{\sfdefault}
+            """,
     }
 )
 
 CONFIDENCE_LEVEL = 0.99
 BOOTSTRAP_SAMPLES = 100
+
+BENCHMARK_SUITES = [
+    "som-rs-bc",
+    "som-rs-ast",
+    "grmtools",
+    "alacritty",
+    "ripgrep",
+    "fd",
+    "binary-trees",
+    "regex-redux",
+]
 
 
 class Metric(Enum):
