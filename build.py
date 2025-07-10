@@ -76,9 +76,13 @@ class ExperimentProfile(Enum):
 
 class GCVS(ExperimentProfile):
     GC = ("gc", "Alloy")
-    RC = ("rc", r"\texttt{Rc<T>}")
-    ARC = ("arc", r"\texttt{Arc<T>}")
-    BASELINE = ("baseline", r"Baseline", {"gc-default-allocator": False})
+    RC = ("rc", r"RC \texttt{[gcmalloc]}")
+    ARC = ("arc", r"RC \texttt{[gcmalloc]}")
+    BASELINE = (
+        "baseline",
+        r"RC \texttt{[jemalloc]}",
+        {"gc-default-allocator": False},
+    )
     TYPED_ARENA = ("typed-arena", "Typed Arena")
     RUST_GC = ("rust-gc", "Rust-GC")
 
@@ -98,17 +102,21 @@ class GCVS(ExperimentProfile):
                 return cls.GC
         return None
 
+    @property
+    def baseline(cls):
+        return cls.BASELINE
+
 
 class PremOpt(ExperimentProfile):
     NAIVE = (
         "naive",
-        "Barriers Naive",
+        "All Barriers",
         {"premature-finalizer-prevention-optimize": False},
     )
-    OPT = ("opt", "Barriers Opt")
+    OPT = ("opt", "Optimized Barriers")
     NONE = (
         "none",
-        "Barriers None",
+        "No Barriers ",
         {
             "premature-finalizer-prevention": False,
             "premature-finalizer-prevention-optimize": False,
@@ -131,9 +139,13 @@ class PremOpt(ExperimentProfile):
                 return cls.OPT
         return None
 
+    @property
+    def baseline(cls):
+        return cls.NONE
+
 
 class Elision(ExperimentProfile):
-    NAIVE = ("naive", "No elision", {"finalizer-elision": False})
+    NAIVE = ("naive", "No Elision", {"finalizer-elision": False})
     OPT = ("opt", "Elision")
 
     @classmethod
@@ -151,6 +163,10 @@ class Elision(ExperimentProfile):
             elif "default" in value:
                 return cls.OPT
         return None
+
+    @property
+    def baseline(cls):
+        return cls.NAIVE
 
 
 def cargo_build(c, src, outdir, install_dir, build_artefact, bin, env=None):
