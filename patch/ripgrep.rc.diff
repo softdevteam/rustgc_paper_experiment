@@ -1,17 +1,8 @@
 diff --git a/crates/core/main.rs b/crates/core/main.rs
-index 64f35ce..4465c9b 100644
+index 64f35ce..9e3a32e 100644
 --- a/crates/core/main.rs
 +++ b/crates/core/main.rs
-@@ -2,6 +2,8 @@
- The main entry point into ripgrep.
- */
- 
-+#![feature(gc)]
-+
- use std::{io::Write, process::ExitCode};
- 
- use ignore::WalkState;
-@@ -16,28 +18,8 @@ mod haystack;
+@@ -16,29 +16,6 @@ mod haystack;
  mod logger;
  mod search;
  
@@ -35,9 +26,9 @@ index 64f35ce..4465c9b 100644
 -// Moreover, we only do this on 64-bit systems since jemalloc doesn't support
 -// i686.
 -#[cfg(all(target_env = "musl", target_pointer_width = "64"))]
- #[global_allocator]
+-#[global_allocator]
 -static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
-+static ALLOC: std::gc::GcAllocator = std::gc::GcAllocator;
- 
+-
  /// Then, as it was, then again it will be.
  fn main() -> ExitCode {
+     match run(flags::parse()) {

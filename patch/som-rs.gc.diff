@@ -375,10 +375,10 @@ index 6556412..b20ef73 100644
 -pub type SOMWeakRef<T> = Weak<RefCell<T>>;
 +pub type SOMRef<T> = Gc<RefCell<T>>;
 diff --git a/som-interpreter-ast/src/main.rs b/som-interpreter-ast/src/main.rs
-index 6658bd0..2a27b6a 100644
+index 6658bd0..9ea24bf 100644
 --- a/som-interpreter-ast/src/main.rs
 +++ b/som-interpreter-ast/src/main.rs
-@@ -1,10 +1,11 @@
+@@ -1,15 +1,14 @@
  //!
  //! This is the interpreter for the Simple Object Machine.
  //!
@@ -391,7 +391,12 @@ index 6658bd0..2a27b6a 100644
  
  use anyhow::anyhow;
  use clap::Parser;
-@@ -17,10 +18,6 @@ use som_interpreter_ast::invokable::Return;
+-#[cfg(feature = "jemalloc")]
+-use jemallocator::Jemalloc;
+ 
+ mod shell;
+ 
+@@ -17,10 +16,6 @@ use som_interpreter_ast::invokable::Return;
  use som_interpreter_ast::universe::Universe;
  use som_interpreter_ast::value::Value;
  
@@ -402,7 +407,7 @@ index 6658bd0..2a27b6a 100644
  #[derive(Debug, Clone, PartialEq, clap::StructOpt)]
  #[structopt(about, author)]
  struct Options {
-@@ -65,7 +62,7 @@ fn main() -> anyhow::Result<()> {
+@@ -65,7 +60,7 @@ fn main() -> anyhow::Result<()> {
  
              let args = std::iter::once(String::from(file_stem))
                  .chain(opts.args.iter().cloned())
@@ -411,7 +416,7 @@ index 6658bd0..2a27b6a 100644
                  .map(Value::String)
                  .collect();
  
-@@ -75,7 +72,7 @@ fn main() -> anyhow::Result<()> {
+@@ -75,7 +70,7 @@ fn main() -> anyhow::Result<()> {
  
              // let class = universe.load_class_from_path(file)?;
              // let instance = Instance::from_class(class);
@@ -1301,10 +1306,10 @@ index 5ee4521..cda4c2b 100644
                  Literal::Block(val) => Value::Block(val),
              };
 diff --git a/som-interpreter-bc/src/lib.rs b/som-interpreter-bc/src/lib.rs
-index 2ede99f..1696f3c 100644
+index 2ede99f..4847c03 100644
 --- a/som-interpreter-bc/src/lib.rs
 +++ b/som-interpreter-bc/src/lib.rs
-@@ -2,8 +2,13 @@
+@@ -2,8 +2,9 @@
  //! This is the interpreter for the Simple Object Machine.
  //!
  
@@ -1312,14 +1317,10 @@ index 2ede99f..1696f3c 100644
  use std::cell::RefCell;
 -use std::rc::{Rc, Weak};
 +use std::gc::Gc;
-+use std::gc::GcAllocator;
-+
-+#[global_allocator]
-+static A: GcAllocator = GcAllocator;
  
  /// Facilities for manipulating blocks.
  pub mod block;
-@@ -33,6 +38,4 @@ pub mod universe;
+@@ -33,6 +34,4 @@ pub mod universe;
  pub mod value;
  
  /// A strong and owning reference to an object.
@@ -1328,10 +1329,10 @@ index 2ede99f..1696f3c 100644
 -pub type SOMWeakRef<T> = Weak<RefCell<T>>;
 +pub type SOMRef<T> = Gc<RefCell<T>>;
 diff --git a/som-interpreter-bc/src/main.rs b/som-interpreter-bc/src/main.rs
-index 62aa750..951bf39 100644
+index 62aa750..552f6d8 100644
 --- a/som-interpreter-bc/src/main.rs
 +++ b/som-interpreter-bc/src/main.rs
-@@ -1,10 +1,11 @@
+@@ -1,15 +1,14 @@
  //!
  //! This is the interpreter for the Simple Object Machine.
  //!
@@ -1344,7 +1345,12 @@ index 62aa750..951bf39 100644
  
  use anyhow::{bail, Context};
  use clap::Parser;
-@@ -19,10 +20,6 @@ use som_interpreter_bc::method::{Method, MethodKind};
+-#[cfg(feature = "jemalloc")]
+-use jemallocator::Jemalloc;
+ 
+ mod shell;
+ 
+@@ -19,10 +18,6 @@ use som_interpreter_bc::method::{Method, MethodKind};
  use som_interpreter_bc::universe::Universe;
  use som_interpreter_bc::value::Value;
  
@@ -1355,7 +1361,7 @@ index 62aa750..951bf39 100644
  #[derive(Debug, Clone, PartialEq, clap::StructOpt)]
  #[clap(about, author)]
  struct Options {
-@@ -74,7 +71,7 @@ fn main() -> anyhow::Result<()> {
+@@ -74,7 +69,7 @@ fn main() -> anyhow::Result<()> {
  
      let args = std::iter::once(String::from(file_stem))
          .chain(opts.args.iter().cloned())
@@ -1364,7 +1370,7 @@ index 62aa750..951bf39 100644
          .map(Value::String)
          .collect();
  
-@@ -86,7 +83,7 @@ fn main() -> anyhow::Result<()> {
+@@ -86,7 +81,7 @@ fn main() -> anyhow::Result<()> {
  
      // let class = universe.load_class_from_path(file)?;
      // let instance = som_interpreter::instance::Instance::from_class(class);
@@ -1373,7 +1379,7 @@ index 62aa750..951bf39 100644
  
      // let invokable = instance.lookup_method(&universe, "run").unwrap();
      // let output = som_interpreter::invokable::Invoke::invoke(invokable.as_ref(), &mut universe, vec![instance]);
-@@ -119,7 +116,7 @@ fn disassemble_class(opts: Options) -> anyhow::Result<()> {
+@@ -119,7 +114,7 @@ fn disassemble_class(opts: Options) -> anyhow::Result<()> {
  
      let class = universe.load_class(file_stem)?;
  

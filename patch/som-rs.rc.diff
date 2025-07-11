@@ -1,48 +1,48 @@
 diff --git a/som-interpreter-ast/src/main.rs b/som-interpreter-ast/src/main.rs
-index 6658bd0..a6e97fc 100644
+index 6658bd0..c05ddc7 100644
 --- a/som-interpreter-ast/src/main.rs
 +++ b/som-interpreter-ast/src/main.rs
-@@ -2,6 +2,7 @@
- //! This is the interpreter for the Simple Object Machine.
- //!
- #![warn(missing_docs)]
-+#![feature(gc)]
+@@ -8,8 +8,6 @@ use std::rc::Rc;
  
- use std::path::PathBuf;
- use std::rc::Rc;
-@@ -17,9 +18,9 @@ use som_interpreter_ast::invokable::Return;
+ use anyhow::anyhow;
+ use clap::Parser;
+-#[cfg(feature = "jemalloc")]
+-use jemallocator::Jemalloc;
+ 
+ mod shell;
+ 
+@@ -17,10 +15,6 @@ use som_interpreter_ast::invokable::Return;
  use som_interpreter_ast::universe::Universe;
  use som_interpreter_ast::value::Value;
  
 -#[cfg(feature = "jemalloc")]
-+use std::gc::GcAllocator;
- #[global_allocator]
+-#[global_allocator]
 -static GLOBAL: Jemalloc = Jemalloc;
-+static GLOBAL: GcAllocator = GcAllocator;
- 
+-
  #[derive(Debug, Clone, PartialEq, clap::StructOpt)]
  #[structopt(about, author)]
+ struct Options {
 diff --git a/som-interpreter-bc/src/main.rs b/som-interpreter-bc/src/main.rs
-index 62aa750..69e1692 100644
+index 62aa750..ee13d52 100644
 --- a/som-interpreter-bc/src/main.rs
 +++ b/som-interpreter-bc/src/main.rs
-@@ -2,6 +2,7 @@
- //! This is the interpreter for the Simple Object Machine.
- //!
- #![warn(missing_docs)]
-+#![feature(gc)]
+@@ -8,8 +8,6 @@ use std::rc::Rc;
  
- use std::path::PathBuf;
- use std::rc::Rc;
-@@ -19,9 +20,9 @@ use som_interpreter_bc::method::{Method, MethodKind};
+ use anyhow::{bail, Context};
+ use clap::Parser;
+-#[cfg(feature = "jemalloc")]
+-use jemallocator::Jemalloc;
+ 
+ mod shell;
+ 
+@@ -19,10 +17,6 @@ use som_interpreter_bc::method::{Method, MethodKind};
  use som_interpreter_bc::universe::Universe;
  use som_interpreter_bc::value::Value;
  
 -#[cfg(feature = "jemalloc")]
-+use std::gc::GcAllocator;
- #[global_allocator]
+-#[global_allocator]
 -static GLOBAL: Jemalloc = Jemalloc;
-+static GLOBAL: GcAllocator = GcAllocator;
- 
+-
  #[derive(Debug, Clone, PartialEq, clap::StructOpt)]
  #[clap(about, author)]
+ struct Options {

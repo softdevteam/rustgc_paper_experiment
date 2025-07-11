@@ -532,14 +532,14 @@ class RipGrep(BenchmarkSuite):
 
     @property
     def cmd_args(self):
-        return f"-j1 $(cat {str(Path('aux/ripgrep_args').resolve())}/%(benchmark)s) {str(RipGrep.LINUX.src)}"
+        return f"-j1 $(cat {str(Path('aux/ripgrep_args').resolve())}/%(benchmark)s) {str(LINUX.src)}"
 
     def build(self, c, target_dir, install_dir, bench_cfg_bin, profile, env):
-        artefacts.LINUX.fetch()
+        LINUX.fetch()
         self.RIPGREP.fetch()
 
-        if not (self.LINUX.src / ".config").exists():
-            with c.cd(str(self.LINUX.src)):
+        if not (LINUX.src / ".config").exists():
+            with c.cd(str(LINUX.src)):
                 c.run(f"make defconfig")
                 c.run(f"make -j100")
 
