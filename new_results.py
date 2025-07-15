@@ -62,6 +62,14 @@ BENCHMARK_SUITES = [
 ]
 
 
+class Aggregation(Enum):
+    INDIVIDUAL = "individual"
+    SUITE_ARITH = "suite_arith"
+    SUITE_GEO = "suite_geo"
+    GLOBAL_ARITH = "global_arith"
+    GLOBAL_GEO = "global_geo"
+
+
 class Metric(Enum):
     def __init__(self, value, latex=None, desc=None):
         self._value_ = value
@@ -112,84 +120,26 @@ class Metric(Enum):
 ALL_CFGS = [GCVS, Elision, PremOpt]
 
 
+@dataclass
+class MetricColumn:
+    metric: Metric
+    agg_type: Aggregation
+    header_name: str
+    decimal_places: int
+    overall: Aggregation
+    value_type: str
+
+
 class Results:
     def __init__(self, df):
         self.df = df.copy()
-        self._arith = None
-        self._geo = None
-        self._combined = None
-
-    def _arith_mean(self):
-        def _amean(self, series):
-            mean = series.mean()
-            n = len(series)
-
-            if n < 2:
-                return pd.Series({"mean": mean, "ci_lower": mean, "ci_upper": mean})
-
-            sem = stats.sem(series)
-            alpha = 1 - CONFIDENCE_LEVEL
-            h = sem * stats.t.ppf(1 - alpha / 2, n - 1)
-
-            return pd.Series({"mean": mean, "ci_lower": mean - h, "ci_upper": mean + h})
-
-        group_cols = ["experiment", "benchmark", "configuration", "suite", "metric"]
-        return (
-            self.df.groupby(group_cols)["value"]
-            .apply(self._amean)
-            .unstack()
-            .reset_index()
-        )
-
-    def _geo_mean(self):
-        def mean(series):
-            arr = np.array(series[series > 0])
-
-            if len(arr) == 0:
-                return pd.Series(
-                    {
-                        "geomean": np.nan,
-                        "ci_lower_gmean": np.nan,
-                        "ci_upper_gmean": np.nan,
-                    }
-                )
-
-            if len(arr) == 1:
-                val = arr[0]
-                return pd.Series(
-                    {"geomean": val, "ci_lower_gmean": val, "ci_upper_gmean": val}
-                )
-
-            res = stats.bootstrap(
-                (arr,),
-                statistic=lambda y: stats.gmean(y, axis=0),
-                n_resamples=BOOTSTRAP_SAMPLES,
-                confidence_level=CONFIDENCE_LEVEL,
-                method="percentile",
-                axis=0,
-            )
-
-            return pd.Series(
-                {
-                    "geomean": stats.gmean(arr),
-                    "ci_lower_gmean": res.confidence_interval.low,
-                    "ci_upper_gmean": res.confidence_interval.high,
-                }
-            )
-
-        return (
-            self.df.groupby(["experiment", "suite", "configuration", "metric"])["value"]
-            .apply(mean)
-            .unstack()
-            .reset_index()
-        )
+        self._results = None
 
     def _add_baseline_comparisons(
         self, df, group_keys, stat_cols, main_col, lower_col, upper_col
     ):
         def process_row(row):
             baseline_config = row["configuration"].baseline
-
             mask = [df[k] == row[k] for k in group_keys if k != "configuration"]
             mask.append(df["configuration"] == baseline_config)
             mask = np.logical_and.reduce(mask)
@@ -250,99 +200,520 @@ class Results:
         return pd.concat([df, processed], axis=1)
 
     @property
-    def arith(self):
-        if self._arith is None:
-            raw = self._arith_mean()
-            self._arith = self._add_baseline_comparisons(
-                raw,
-                ["experiment", "benchmark", "configuration", "suite", "metric"],
-                ["mean", "ci_lower", "ci_upper"],
-                "mean",
-                "ci_lower",
-                "ci_upper",
-            )
-        return self._arith
+    def results(self):
+        if self._results is not None:
+            return self._results
 
-    @property
-    def geo(self):
-        if self._geo is None:
-            raw = self._geo_mean()
-            with_baselines = self._add_baseline_comparisons(
-                raw,
-                ["experiment", "suite", "configuration", "metric"],
-                ["geomean", "ci_lower_gmean", "ci_upper_gmean"],
-                "geomean",
-                "ci_lower_gmean",
-                "ci_upper_gmean",
-            )
+        results = []
 
-            distinguishable = self.arith[self.arith["distinguishable"]].copy()
+        def _amean(series):
+            mean = series.mean()
+            n = len(series)
+            if n < 2:
+                return pd.Series({"mean": mean, "ci_lower": mean, "ci_upper": mean})
+            sem = stats.sem(series)
+            alpha = 1 - CONFIDENCE_LEVEL
+            h = sem * stats.t.ppf(1 - alpha / 2, n - 1)
+            return pd.Series({"mean": mean, "ci_lower": mean - h, "ci_upper": mean + h})
 
-            if not distinguishable.empty:
-                group_cols = ["suite", "configuration", "metric"]
+        individual = (
+            self.df.groupby(
+                ["experiment", "benchmark", "configuration", "suite", "metric"]
+            )["value"]
+            .apply(_amean)
+            .unstack()
+            .reset_index()
+        )
+        individual = self._add_baseline_comparisons(
+            individual,
+            ["experiment", "benchmark", "configuration", "suite", "metric"],
+            ["mean", "ci_lower", "ci_upper"],
+            "mean",
+            "ci_lower",
+            "ci_upper",
+        )
+        individual["agg_type"] = Aggregation.INDIVIDUAL
+        results.append(individual)
 
-                best_idx = distinguishable.groupby(group_cols)["ratio"].idxmin()
-                worst_idx = distinguishable.groupby(group_cols)["ratio"].idxmax()
-
-                best = distinguishable.loc[
-                    best_idx, group_cols + ["benchmark", "ratio"]
-                ].rename(
-                    columns={
-                        "benchmark": "best_benchmark",
-                        "ratio": "best_benchmark_ratio",
-                    }
+        def suite_arith_mean(series):
+            arr = np.array(series)
+            if len(arr) == 0:
+                return pd.Series(
+                    {"mean": np.nan, "ci_lower": np.nan, "ci_upper": np.nan}
                 )
-                worst = distinguishable.loc[
-                    worst_idx, group_cols + ["benchmark", "ratio"]
-                ].rename(
-                    columns={
-                        "benchmark": "worst_benchmark",
-                        "ratio": "worst_benchmark_ratio",
-                    }
+            if len(arr) == 1:
+                val = arr[0]
+                return pd.Series({"mean": val, "ci_lower": val, "ci_upper": val})
+            mean = arr.mean()
+            sem = stats.sem(arr)
+            alpha = 1 - CONFIDENCE_LEVEL
+            h = sem * stats.t.ppf(1 - alpha / 2, len(arr) - 1)
+            return pd.Series({"mean": mean, "ci_lower": mean - h, "ci_upper": mean + h})
+
+        suite_arith = (
+            self.df.groupby(["experiment", "suite", "configuration", "metric"])["value"]
+            .apply(suite_arith_mean)
+            .unstack()
+            .reset_index()
+        )
+        suite_arith = self._add_baseline_comparisons(
+            suite_arith,
+            ["experiment", "suite", "configuration", "metric"],
+            ["mean", "ci_lower", "ci_upper"],
+            "mean",
+            "ci_lower",
+            "ci_upper",
+        )
+        suite_arith["agg_type"] = Aggregation.SUITE_ARITH
+        results.append(suite_arith)
+
+        def suite_geo_mean(series):
+            arr = np.array(series[series > 0])
+            if len(arr) == 0:
+                return pd.Series(
+                    {"mean": np.nan, "ci_lower": np.nan, "ci_upper": np.nan}
                 )
-
-                with_baselines = with_baselines.merge(
-                    best, on=group_cols, how="left"
-                ).merge(worst, on=group_cols, how="left")
-
-            self._geo = with_baselines
-        return self._geo
-
-    @property
-    def combined(self):
-        if self._combined is None:
-            merge_keys = ["suite", "experiment", "configuration", "metric"]
-            geo_renamed = self.geo.rename(
-                columns={
-                    col: f"{col}_gmean"
-                    for col in self.geo.columns
-                    if col not in merge_keys
+            if len(arr) == 1:
+                val = arr[0]
+                return pd.Series({"mean": val, "ci_lower": val, "ci_upper": val})
+            res = stats.bootstrap(
+                (arr,),
+                statistic=lambda y: stats.gmean(y, axis=0),
+                n_resamples=BOOTSTRAP_SAMPLES,
+                confidence_level=CONFIDENCE_LEVEL,
+                method="percentile",
+                axis=0,
+            )
+            return pd.Series(
+                {
+                    "mean": stats.gmean(arr),
+                    "ci_lower": res.confidence_interval.low,
+                    "ci_upper": res.confidence_interval.high,
                 }
             )
 
-            self._combined = self.arith.merge(
-                geo_renamed, on=merge_keys, how="outer", suffixes=("", "_gmean")
-            )
-        return self._combined
+        suite_geo = (
+            self.df.groupby(["experiment", "suite", "configuration", "metric"])["value"]
+            .apply(suite_geo_mean)
+            .unstack()
+            .reset_index()
+        )
+        suite_geo = self._add_baseline_comparisons(
+            suite_geo,
+            ["experiment", "suite", "configuration", "metric"],
+            ["mean", "ci_lower", "ci_upper"],
+            "mean",
+            "ci_lower",
+            "ci_upper",
+        )
+        suite_geo["agg_type"] = Aggregation.SUITE_GEO
+        results.append(suite_geo)
+
+        global_arith = (
+            self.df.groupby(["experiment", "configuration", "metric"])["value"]
+            .apply(suite_arith_mean)
+            .unstack()
+            .reset_index()
+        )
+        global_arith = self._add_baseline_comparisons(
+            global_arith,
+            ["experiment", "configuration", "metric"],
+            ["mean", "ci_lower", "ci_upper"],
+            "mean",
+            "ci_lower",
+            "ci_upper",
+        )
+        global_arith["agg_type"] = Aggregation.GLOBAL_ARITH
+        results.append(global_arith)
+
+        global_geo = (
+            self.df.groupby(["experiment", "configuration", "metric"])["value"]
+            .apply(suite_geo_mean)
+            .unstack()
+            .reset_index()
+        )
+        global_geo = self._add_baseline_comparisons(
+            global_geo,
+            ["experiment", "configuration", "metric"],
+            ["mean", "ci_lower", "ci_upper"],
+            "mean",
+            "ci_lower",
+            "ci_upper",
+        )
+        global_geo["agg_type"] = Aggregation.GLOBAL_GEO
+        results.append(global_geo)
+
+        self._results = pd.concat(results, ignore_index=True)
+        return self._results
+
+    @property
+    def arith(self):
+        return self.results[self.results["agg_type"] == Aggregation.INDIVIDUAL]
+
+    @property
+    def geo(self):
+        return self.results[self.results["agg_type"] == Aggregation.SUITE_GEO]
+
+    @property
+    def global_geo(self):
+        return self.results[self.results["agg_type"] == Aggregation.GLOBAL_GEO]
+
+    @property
+    def global_arith(self):
+        return self.results[self.results["agg_type"] == Aggregation.GLOBAL_ARITH]
+
+    @property
+    def suite_arith(self):
+        return self.results[self.results["agg_type"] == Aggregation.SUITE_ARITH]
 
     @property
     def elision(self):
-        filtered = self.df[self.df["experiment"] == "elision"].copy()
-        return Results(filtered)
+        return Results(self.df[self.df["experiment"] == "elision"])
 
     @property
     def gcvs(self):
-        filtered = self.df[self.df["experiment"] == "gcvs"].copy()
-        return Results(filtered)
+        return Results(self.df[self.df["experiment"] == "gcvs"])
 
     @property
     def premopt(self):
-        filtered = self.df[self.df["experiment"] == "premopt"].copy()
-        return Results(filtered)
+        return Results(self.df[self.df["experiment"] == "premopt"])
 
     @property
     def experiments(self):
         return self.df["experiment"].unique().tolist()
+
+    def mk_table(
+        self,
+        columns,
+        output_file=None,
+    ):
+        def format_value(val, low, high, dp):
+            if pd.isna(val):
+                return "", ""
+            if abs(val - 1.0) < 1e-6:
+                val_fmt = f"\\textbf{{{val:.{dp}f}}}"
+            else:
+                val_fmt = f"{val:.{dp}f}$\\times$"
+            ci_fmt = (
+                f"\\scriptsize\\textcolor{{gray!80}}{{[{low:.{dp}f}, {high:.{dp}f}]}}"
+            )
+            return val_fmt, ci_fmt
+
+        col_format = "l l " + " ".join(["r@{\\hspace{0.5em}}l" for _ in columns])
+        header_line1 = ["Suite", "Configuration"] + [
+            f"\\multicolumn{{2}}{{c}}{{{col.header_name}}}" for col in columns
+        ]
+
+        lines = []
+        lines.append(f"\\begin{{tabular}}{{{col_format}}}")
+        lines.append("\\toprule")
+        lines.append(" & ".join(header_line1) + " \\\\")
+        lines.append("\\midrule")
+
+        # Main data by suite
+        for suite, group in self.results.groupby("suite"):
+            first_row = True
+            for config in sorted(group["configuration"].unique()):
+                suite_name = suite if first_row else ""
+                first_row = False
+                row_cells = [suite_name, config.latex]
+
+                for col in columns:
+                    match = self.results[
+                        (self.results["agg_type"] == col.agg_type)
+                        & (self.results["metric"] == col.metric)
+                        & (self.results["suite"] == suite)
+                        & (self.results["configuration"] == config)
+                    ]
+
+                    if match.empty:
+                        val_fmt, ci_fmt = "", ""
+                    else:
+                        row = match.iloc[0]
+                        val_col = (
+                            col.value_type
+                            if col.value_type in match.columns
+                            else "mean"
+                        )
+                        low_col = (
+                            f"{col.value_type}_lower"
+                            if f"{col.value_type}_lower" in match.columns
+                            else "ci_lower"
+                        )
+                        high_col = (
+                            f"{col.value_type}_upper"
+                            if f"{col.value_type}_upper" in match.columns
+                            else "ci_upper"
+                        )
+                        val_fmt, ci_fmt = format_value(
+                            row[val_col],
+                            row[low_col],
+                            row[high_col],
+                            col.decimal_places,
+                        )
+
+                    row_cells.extend([val_fmt, ci_fmt])
+
+                lines.append(" & ".join(row_cells) + " \\\\")
+            lines.append("\\midrule")
+
+        # Overall section
+        if any(col.overall is not None for col in columns):
+            first_overall_row = True
+            for config in sorted(self.results["configuration"].unique()):
+                suite_name = "overall" if first_overall_row else ""
+                first_overall_row = False
+                row_cells = [suite_name, config.latex]
+
+                for col in columns:
+                    if col.overall is None:
+                        val_fmt, ci_fmt = "", ""
+                    else:
+                        match = self.results[
+                            (self.results["agg_type"] == col.overall)
+                            & (self.results["metric"] == col.metric)
+                            & (self.results["configuration"] == config)
+                        ]
+
+                        if match.empty:
+                            val_fmt, ci_fmt = "", ""
+                        else:
+                            row = match.iloc[0]
+                            val_col = (
+                                col.value_type
+                                if col.value_type in match.columns
+                                else "mean"
+                            )
+                            low_col = (
+                                f"{col.value_type}_lower"
+                                if f"{col.value_type}_lower" in match.columns
+                                else "ci_lower"
+                            )
+                            high_col = (
+                                f"{col.value_type}_upper"
+                                if f"{col.value_type}_upper" in match.columns
+                                else "ci_upper"
+                            )
+                            val_fmt, ci_fmt = format_value(
+                                row[val_col],
+                                row[low_col],
+                                row[high_col],
+                                col.decimal_places,
+                            )
+
+                    row_cells.extend([val_fmt, ci_fmt])
+
+                lines.append(" & ".join(row_cells) + " \\\\")
+
+        lines.append("\\bottomrule")
+        lines.append("\\end{tabular}")
+
+        latex_str = "\n".join(lines)
+
+        if output_file is not None:
+            with open(output_file, "w") as f:
+                f.write(latex_str)
+
+        return latex_str
+
+    class TableGen:
+        def fmt_float(self, x, digits=2, bold=False):
+            if pd.isna(x):
+                return "-"
+            s = f"{x:.{digits}f}"
+            return f"\\textbf{{{s}}}" if bold else s
+
+        def fmt_ratio(self, x, digits=2, distinguishable=True, use_times=True):
+            if pd.isna(x):
+                return "-"
+            symbol = "$\\times$" if use_times else "×"
+            s = f"{x:.{digits}f}{symbol}"
+            return f"{s}\\dag" if not distinguishable else s
+
+        def fmt_ci_interval(self, lower, upper, digits=2):
+            if pd.isna(lower) or pd.isna(upper):
+                return ""
+            return f"\\scriptsize\\textcolor{{gray!80}}{{[{lower:.{digits}f}, {upper:.{digits}f}]}}"
+
+        def fmt_ci_symmetric(self, mean_val, ci_lower, ci_upper, digits=1):
+            if pd.isna(mean_val) or pd.isna(ci_lower) or pd.isna(ci_upper):
+                return ""
+            ci_range = (ci_upper - ci_lower) / 2
+            return f"\\scriptsize\\color{{gray!80}}{{±{ci_range:.{digits}f}}}"
+
+        def mk_summary_table(
+            self,
+            results,
+            metrics,
+            agg_using,
+            header_names,
+            decimal_places=None,
+            output_file=None,
+        ):
+            if decimal_places is None:
+                decimal_places = [2] * len(metrics)
+
+            # Filter results by aggregation types
+            agg_values = [agg.value for agg in agg_using]
+            df = results.results[
+                (results.results["metric"].isin(metrics))
+                & (results.results["aggregation_type"].isin(agg_values))
+            ]
+
+            df_unique = (
+                df.groupby(["suite", "configuration", "metric", "aggregation_type"])
+                .first()
+                .reset_index()
+            )
+            baseline = df_unique["configuration"].iloc[0].baseline
+
+            # Table setup
+            col_spec = "l l " + "r@{\\hspace{0.5em}}l " * len(metrics)
+            header_cols = [
+                f"\\multicolumn{{2}}{{c}}{{{name}}}" for name in header_names
+            ]
+            header = "Suite & Configuration & " + " & ".join(header_cols) + " \\\\"
+
+            lines = [
+                f"\\begin{{tabular}}{{{col_spec}}}",
+                r"\toprule",
+                header,
+                r"\midrule",
+            ]
+
+            # Suite groups
+            for suite_name, suite_data in df_unique.groupby("suite"):
+                configs = sorted(
+                    suite_data["configuration"].unique(),
+                    key=lambda x: (x != baseline, x),
+                )
+
+                for i, config in enumerate(configs):
+                    row_data = [suite_name if i == 0 else "", config.latex]
+
+                    for metric, agg_type, digits in zip(
+                        metrics, agg_using, decimal_places
+                    ):
+                        metric_data = suite_data[
+                            (suite_data["metric"] == metric)
+                            & (suite_data["configuration"] == config)
+                            & (suite_data["aggregation_type"] == agg_type.value)
+                        ]
+
+                        if metric_data.empty:
+                            row_data.extend(["-", ""])
+                            continue
+
+                        row = metric_data.iloc[0]
+                        is_baseline = config == baseline
+
+                        # Use standardized column names
+                        mean_val = (
+                            self.fmt_float(
+                                row["baseline_mean"], digits=digits, bold=True
+                            )
+                            if is_baseline
+                            else self.fmt_ratio(
+                                row["ratio"],
+                                digits=digits,
+                                distinguishable=row["distinguishable"],
+                            )
+                        )
+
+                        # Use symmetric CI for arithmetic means, interval CI for geometric means
+                        is_arithmetic = agg_type in [
+                            Aggregation.INDIVIDUAL,
+                            Aggregation.SUITE_ARITH,
+                            Aggregation.GLOBAL_ARITH,
+                        ]
+                        if is_arithmetic:
+                            ci_col = "baseline_" if is_baseline else "ratio_"
+                            ci_val = self.fmt_ci_symmetric(
+                                row[f"{ci_col}mean" if is_baseline else "ratio"],
+                                row[f"{ci_col}ci_lower"],
+                                row[f"{ci_col}ci_upper"],
+                                digits=digits,
+                            )
+                        else:
+                            ci_col = "baseline_" if is_baseline else "ratio_"
+                            ci_val = self.fmt_ci_interval(
+                                row[f"{ci_col}ci_lower"],
+                                row[f"{ci_col}ci_upper"],
+                                digits=digits,
+                            )
+
+                        row_data.extend([mean_val, ci_val])
+
+                    lines.append(" & ".join(row_data) + r" \\")
+                lines.append(r"\midrule")
+
+            # Overall results (using global aggregations)
+            configs = sorted(
+                df_unique["configuration"].unique(), key=lambda x: (x != baseline, x)
+            )
+
+            for i, config in enumerate(configs):
+                row_data = ["overall" if i == 0 else "", config.latex]
+
+                for metric, agg_type, digits in zip(metrics, agg_using, decimal_places):
+                    # Map to global equivalent
+                    global_agg = {
+                        Aggregation.SUITE_GEO: Aggregation.GLOBAL_GEO,
+                        Aggregation.INDIVIDUAL: Aggregation.GLOBAL_ARITH,
+                        Aggregation.SUITE_ARITH: Aggregation.GLOBAL_ARITH,
+                        Aggregation.GLOBAL_GEO: Aggregation.GLOBAL_GEO,
+                        Aggregation.GLOBAL_ARITH: Aggregation.GLOBAL_ARITH,
+                    }.get(agg_type, Aggregation.GLOBAL_ARITH)
+
+                    metric_data = df_unique[
+                        (df_unique["metric"] == metric)
+                        & (df_unique["configuration"] == config)
+                        & (df_unique["aggregation_type"] == global_agg.value)
+                    ]
+
+                    if metric_data.empty:
+                        row_data.extend(["-", ""])
+                        continue
+
+                    row = metric_data.iloc[0]
+                    is_baseline = config == baseline
+
+                    mean_val = (
+                        self.fmt_float(row["baseline_mean"], digits=digits, bold=True)
+                        if is_baseline
+                        else self.fmt_ratio(
+                            row["ratio"], digits=digits, distinguishable=True
+                        )
+                    )
+
+                    is_arithmetic = global_agg == Aggregation.GLOBAL_ARITH
+                    if is_arithmetic:
+                        ci_col = "baseline_" if is_baseline else "ratio_"
+                        ci_val = self.fmt_ci_symmetric(
+                            row[f"{ci_col}mean" if is_baseline else "ratio"],
+                            row[f"{ci_col}ci_lower"],
+                            row[f"{ci_col}ci_upper"],
+                            digits=digits,
+                        )
+                    else:
+                        ci_col = "baseline_" if is_baseline else "ratio_"
+                        ci_val = self.fmt_ci_interval(
+                            row[f"{ci_col}ci_lower"],
+                            row[f"{ci_col}ci_upper"],
+                            digits=digits,
+                        )
+
+                    row_data.extend([mean_val, ci_val])
+
+                lines.append(" & ".join(row_data) + r" \\")
+
+            lines.extend([r"\bottomrule", r"\end{tabular}"])
+
+            content = "\n".join(lines)
+            if output_file:
+                with open(output_file, "w") as f:
+                    f.write(content)
+            return content
 
 
 class Plotter:
