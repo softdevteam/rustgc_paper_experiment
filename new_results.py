@@ -1105,406 +1105,449 @@ def parse_all_benchmark_data(suite):
             numeric_cols = [col for col in df.columns if col != Metric.PHASE]
             df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors="coerce")
 
-            df[Metric.HEAP_GREW] = (-df[Metric.BYTES_FREED]).clip(lower=0)
-            df[Metric.BYTES_FREED] = df[Metric.BYTES_FREED].clip(lower=0)
+def process_gcvs(perf):
+    perf.mk_individual_table(
+        columns=[
+            MetricColumn(
+                metric=Metric.WALLCLOCK,
+                agg_type=Aggregation.INDIVIDUAL,
+                header_name="Wall-clock time (seconds)",
+                value_type="mean",
+                format_func=fmt_ms_to_s,
+            ),
+        ],
+        suites=["alacritty", "fd", "som-rs-ast"],
+        output_file="tables/appendix_gcvs_wallclock_1.tex",
+    )
+    perf.mk_individual_table(
+        columns=[
+            MetricColumn(
+                metric=Metric.WALLCLOCK,
+                agg_type=Aggregation.INDIVIDUAL,
+                header_name="Wall-clock time (seconds)",
+                value_type="mean",
+                format_func=fmt_ms_to_s,
+            ),
+        ],
+        suites=["ripgrep", "grmtools", "som-rs-bc"],
+        output_file="tables/appendix_gcvs_wallclock_2.tex",
+    )
 
-            time_cols = [
-                Metric.TIME_MARKING,
-                Metric.TIME_SWEEPING,
-                Metric.TIME_FINALIZER_QUEUE,
-                Metric.TIME_TOTAL,
-            ]
-            time_ms_cols = [f"{col.value}_ms" for col in time_cols]
-            time_ns_cols = [f"{col.value}_ns" for col in time_cols]
+    perf.mk_individual_table(
+        columns=[
+            MetricColumn(
+                metric=Metric.USER,
+                agg_type=Aggregation.INDIVIDUAL,
+                header_name="User time (seconds)",
+                value_type="mean",
+                format_func=fmt_ms_to_s,
+            ),
+        ],
+        suites=["alacritty", "fd", "som-rs-ast"],
+        output_file="tables/appendix_gcvs_user_1.tex",
+    )
+    perf.mk_individual_table(
+        columns=[
+            MetricColumn(
+                metric=Metric.USER,
+                agg_type=Aggregation.INDIVIDUAL,
+                header_name="User time (seconds)",
+                value_type="mean",
+                format_func=fmt_ms_to_s,
+            ),
+        ],
+        suites=["ripgrep", "grmtools", "som-rs-bc"],
+        output_file="tables/appendix_gcvs_user_2.tex",
+    )
 
-            for i, col in enumerate(time_cols):
-                df[col] = df[time_ms_cols[i]] + df[time_ns_cols[i]] / 1_000_000
-            df = df.drop(columns=time_ms_cols + time_ns_cols)
+    perf.mk_table(
+        columns=[
+            MetricColumn(
+                metric=Metric.WALLCLOCK,
+                agg_type=Aggregation.SUITE_GEO,
+                header_name="Time (seconds)",
+                group_header="Wallclock-time",
+                overall=Aggregation.GLOBAL_GEO,
+                value_type="mean",
+                format_func=fmt_ms_to_s,
+            ),
+            MetricColumn(
+                metric=Metric.WALLCLOCK,
+                agg_type=Aggregation.SUITE_GEO,
+                header_name="Ratio",
+                group_header="Wallclock-time",
+                overall=Aggregation.GLOBAL_GEO,
+                value_type="ratio",
+            ),
+            MetricColumn(
+                metric=Metric.USER,
+                agg_type=Aggregation.SUITE_GEO,
+                header_name="Time (seconds)",
+                group_header="User-time",
+                overall=Aggregation.GLOBAL_GEO,
+                value_type="mean",
+                format_func=fmt_ms_to_s,
+            ),
+            MetricColumn(
+                metric=Metric.USER,
+                agg_type=Aggregation.SUITE_GEO,
+                header_name="Ratio",
+                group_header="User-time",
+                overall=Aggregation.GLOBAL_GEO,
+                value_type="ratio",
+            ),
+        ],
+        output_file="tables/gcvs_perf_summary.tex",
+    )
 
-            sentinel = df[Metric.COLLECTION_NUMBER] == -1
-            metadata = {
-                "invocation": sentinel.cumsum().shift(fill_value=0) + 1,
-                "benchmark": benchmark,
-                "configuration": configuration,
-            }
-            df = df.assign(**metadata)
+    config = PlotConfig(
+        # Visual settings
+        figsize=(3, 12),
+        savepath="plots/performance.pdf",
+        max_benchmarks_per_plot=22,
+        group_width=0.8,
+        # Plot settings
+        metric="ratio",
+        agg_type=Aggregation.INDIVIDUAL,
+        experiment="gcvs",
+        xlim=(0.5, 2.0),
+        ncols=4,
+    )
 
-            per_collection = df[~sentinel].drop(columns=[Metric.PHASE])
-            summary_rows = df[sentinel]
+    plotter = Plotter(config)
+    plotter.plot(perf.results, output_file="plots/gcvs_perf.svg")
 
-            totals = [
-                Metric.ALLOCATED_ARC,
-                Metric.ALLOCATED_BOXED,
-                Metric.ALLOCATED_RC,
-                Metric.ALLOCATED_GC,
-                Metric.FINALIZERS_REGISTERED,
-                Metric.FINALIZERS_RUN,
-                Metric.OBJECTS_IN_FINALIZER_QUEUE,
-                Metric.LIVE_OBJECTS_WITH_FINALIZERS,
-                Metric.TIME_MARKING,
-                Metric.TIME_SWEEPING,
-                Metric.TIME_FINALIZER_QUEUE,
-                Metric.TIME_TOTAL,
-            ]
 
-            metadata_cols = list(metadata.keys())
-            totals = summary_rows[metadata_cols + totals]
+def process_elision(perf):
+    perf.mk_individual_table(
+        columns=[
+            MetricColumn(
+                metric=Metric.PCT_ELIDED,
+                agg_type=Aggregation.INDIVIDUAL,
+                header_name=r"\% Fin. elided",
+                value_type="mean",
+            ),
+        ],
+        suites=["alacritty", "fd", "som-rs-ast"],
+        output_file="tables/appendix_elision_pct_1.tex",
+        baseline=False,
+    )
+    perf.mk_individual_table(
+        columns=[
+            MetricColumn(
+                metric=Metric.PCT_ELIDED,
+                agg_type=Aggregation.INDIVIDUAL,
+                header_name=r"\% Fin. elided",
+                value_type="mean",
+            ),
+        ],
+        suites=["ripgrep", "grmtools", "som-rs-bc"],
+        output_file="tables/appendix_elision_pct_2.tex",
+        baseline=False,
+    )
 
-            max_collections = per_collection.groupby("invocation", as_index=False)[
-                Metric.COLLECTION_NUMBER
-            ].max()
-            max_collections = max_collections.assign(
+    perf.mk_individual_table(
+        columns=[
+            MetricColumn(
+                metric=Metric.WALLCLOCK,
+                agg_type=Aggregation.INDIVIDUAL,
+                header_name="Wall-clock time (seconds)",
+                value_type="mean",
+                format_func=fmt_ms_to_s,
+            ),
+        ],
+        suites=["alacritty", "fd", "som-rs-ast"],
+        output_file="tables/appendix_elision_wallclock_1.tex",
+    )
+    perf.mk_individual_table(
+        columns=[
+            MetricColumn(
+                metric=Metric.WALLCLOCK,
+                agg_type=Aggregation.INDIVIDUAL,
+                header_name="Wall-clock time (seconds)",
+                value_type="mean",
+                format_func=fmt_ms_to_s,
+            ),
+        ],
+        suites=["ripgrep", "grmtools", "som-rs-bc"],
+        output_file="tables/appendix_elision_wallclock_2.tex",
+    )
+
+    perf.mk_individual_table(
+        columns=[
+            MetricColumn(
+                metric=Metric.USER,
+                agg_type=Aggregation.INDIVIDUAL,
+                header_name="User time (seconds)",
+                value_type="mean",
+                format_func=fmt_ms_to_s,
+            ),
+        ],
+        suites=["alacritty", "fd", "som-rs-ast"],
+        output_file="tables/appendix_elision_user_1.tex",
+    )
+    perf.mk_individual_table(
+        columns=[
+            MetricColumn(
+                metric=Metric.USER,
+                agg_type=Aggregation.INDIVIDUAL,
+                header_name="User time (seconds)",
+                value_type="mean",
+                format_func=fmt_ms_to_s,
+            ),
+        ],
+        suites=["ripgrep", "grmtools", "som-rs-bc"],
+        output_file="tables/appendix_elision_user_2.tex",
+    )
+
+    perf.mk_individual_table(
+        columns=[
+            MetricColumn(
                 metric=Metric.TOTAL_COLLECTIONS,
-                benchmark=benchmark,
-                configuration=configuration,
-                suite=suite,
-            ).rename(columns={Metric.COLLECTION_NUMBER: "value"})
-
-            totals = pd.concat(
-                [
-                    totals.melt(
-                        id_vars=metadata_cols, var_name="metric", value_name="value"
-                    ),
-                    max_collections,
-                ],
-                ignore_index=True,
-            )
-
-            per_collection = per_collection.melt(
-                id_vars=[Metric.COLLECTION_NUMBER] + metadata_cols,
-                var_name="metric",
-                value_name="value",
-            )
-
-            return per_collection, totals
-
-        path = Path(f"results/{suite}/metrics")
-        csvs = glob.glob(str(path / "*.csv"))
-
-        results = [_process_metric_csv(f) for f in csvs]
-        gc_metrics, summary_metrics = zip(*results)
-
-        return pd.concat(gc_metrics, ignore_index=True), pd.concat(
-            summary_metrics, ignore_index=True
-        )
-
-    def _parse_perf(suite):
-        def to_benchmark(name):
-            for b in suite.benchmarks:
-                if b.name.lower() == name.lower():
-                    return b
-            raise ValueError(f"Benchmark for {name} not found.")
-
-        file = Path(f"results/{suite}/perf/results.data")
-
-        if not file.exists():
-            return pd.DataFrame()
-
-        df = pd.read_csv(
-            file,
-            sep="\t",
-            comment="#",
-            index_col="suite",
-            converters={
-                "criterion": Metric,
-                "executor": to_cfg,
-            },
-        )
-
-        return df.rename(
-            columns={"executor": "configuration", "criterion": "metric"}
-        ).reset_index()[["benchmark", "configuration", "value", "metric", "invocation"]]
-
-    metrics_per_collection, metrics_summary = _parse_metrics(suite)
-    perf_data = _parse_perf(suite)
-
-    datasets = {
-        "metrics_per_collection": metrics_per_collection,
-        "metrics_summary": metrics_summary,
-        "perf_data": perf_data,
-    }
-
-    explode_to = [GCVS.GC, PremOpt.OPT, Elision.OPT]
-
-    for name, df in datasets.items():
-        if df.empty:
-            continue
-
-        mask = df["configuration"] == GCVS.GC
-        if mask.any():
-            gc_rows = df[mask].loc[df[mask].index.repeat(len(explode_to))].copy()
-            gc_rows["configuration"] = explode_to * mask.sum()
-            other_rows = df[~mask]
-            datasets[name] = pd.concat([gc_rows, other_rows], ignore_index=True)
-
-        datasets[name]["suite"] = suite
-        datasets[name]["experiment"] = datasets[name]["configuration"].apply(
-            lambda x: x.experiment
-        )
-
-    return (
-        datasets["metrics_per_collection"],
-        datasets["metrics_summary"],
-        datasets["perf_data"],
+                agg_type=Aggregation.INDIVIDUAL,
+                header_name=r"\# collections",
+                value_type="mean",
+                format_func=fmt_big_num,
+            ),
+        ],
+        suites=["alacritty", "fd", "som-rs-ast"],
+        output_file="tables/appendix_elision_numgcs_1.tex",
+    )
+    perf.mk_individual_table(
+        columns=[
+            MetricColumn(
+                metric=Metric.TOTAL_COLLECTIONS,
+                agg_type=Aggregation.INDIVIDUAL,
+                header_name=r"\# collections",
+                value_type="mean",
+                format_func=fmt_big_num,
+            ),
+        ],
+        suites=["ripgrep", "grmtools", "som-rs-bc"],
+        output_file="tables/appendix_elision_numgcs_2.tex",
     )
 
-
-def mk_gc_breakdown_table(results, metrics=None, output_file="plots/gc_breakdown.tex"):
-    if metrics is None:
-        metrics = [
-            Metric.FINALIZERS_REGISTERED,
-            Metric.TOTAL_COLLECTIONS,
-            Metric.TIME_MARKING,
-            Metric.TIME_TOTAL,
-        ]
-
-    df = results.arith
-
-    def fmt_float(x, digits=1, bold=False):
-        s = "-" if pd.isna(x) else f"{x:.{digits}f}"
-        return f"\\textbf{{{s}}}" if bold else s
-
-    def fmt_ratio(x, digits=2, distinguishable=True):
-        s = "-" if pd.isna(x) else f"{x:.{digits}f}×"
-        if not distinguishable:
-            return f"{s}^\\dag"
-        else:
-            return s
-
-    def fmt_ci_symmetric(mean_val, ci_lower, ci_upper, digits=1):
-        if pd.isna(mean_val) or pd.isna(ci_lower) or pd.isna(ci_upper):
-            return ""
-        ci_range = (ci_upper - ci_lower) / 2
-        return f"\\scriptsize\\color{{gray!80}}{{±{ci_range:.{digits}f}}}"
-
-    col_spec = "c l " + "r@{\\hspace{0.5em}}l " * len(metrics)
-
-    header1 = (
-        "\\multirow{2}{*}{Suite} & \\multirow{2}{*}{Benchmark} & "
-        "\\multicolumn{2}{c}{Finalizers Registered} & "
-        "\\multicolumn{2}{c}{Collections} & "
-        "\\multicolumn{2}{c}{Mark Phase} & "
-        "\\multicolumn{2}{c}{Total}"
+    perf.mk_individual_table(
+        columns=[
+            MetricColumn(
+                metric=Metric.ALLOCATED_GC,
+                agg_type=Aggregation.INDIVIDUAL,
+                header_name=r"\# GC objects",
+                value_type="mean",
+                format_func=fmt_big_num,
+            ),
+        ],
+        suites=["alacritty", "fd", "som-rs-ast"],
+        output_file="tables/appendix_elision_numgcallocs_1.tex",
+    )
+    perf.mk_individual_table(
+        columns=[
+            MetricColumn(
+                metric=Metric.ALLOCATED_GC,
+                agg_type=Aggregation.INDIVIDUAL,
+                header_name=r"\# GC objects",
+                value_type="mean",
+                format_func=fmt_big_num,
+            ),
+        ],
+        suites=["ripgrep", "grmtools", "som-rs-bc"],
+        output_file="tables/appendix_elision_numgcallocs_2.tex",
     )
 
-    header2 = " &  & Before & Ratio & Baseline & Current "
-    for metric in metrics[2:]:
-        header2 += " & Before (s) & Ratio"
-
-    lines = [
-        f"\\begin{{tabular}}{{{col_spec}}}",
-        r"\toprule",
-        header1 + r" \\",
-        header2 + r" \\",
-        r"\midrule",
-    ]
-
-    baseline = df["configuration"].iloc[0].baseline
-    df = df[df["configuration"] != baseline]
-
-    suite_groups = list(df.groupby("suite"))
-
-    for suite_idx, (suite_name, suite_data) in enumerate(suite_groups):
-        suite_benchmarks = suite_data["benchmark"].unique()
-
-        for i, benchmark in enumerate(suite_benchmarks):
-            benchmark_data = suite_data[suite_data["benchmark"] == benchmark]
-
-            if i == 0:
-                suite_cell = f"\\multirow{{{len(suite_benchmarks)}}}{{*}}[0pt]{{\\rotatebox{{90}}{{{suite_name}}}}}"
-            else:
-                suite_cell = ""
-
-            row_data = [suite_cell, benchmark]
-
-            finalizers_data = benchmark_data[benchmark_data["metric"] == metrics[0]]
-            if not finalizers_data.empty:
-                row = finalizers_data.iloc[0]
-                baseline_val = fmt_float(row["baseline_mean"])
-                baseline_ci = fmt_ci_symmetric(
-                    row["baseline_mean"],
-                    row["baseline_ci_lower"],
-                    row["baseline_ci_upper"],
-                )
-                baseline_cell = f"{baseline_val}{baseline_ci}"
-
-                is_distinguishable = row["distinguishable"]
-                ratio_val = fmt_ratio(row["ratio"], distinguishable=is_distinguishable)
-                ratio_ci = fmt_ci_symmetric(
-                    row["ratio"], row["ratio_lower"], row["ratio_upper"], digits=2
-                )
-                ratio_cell = f"{ratio_val}{ratio_ci}"
-
-                row_data.extend([baseline_cell, ratio_cell])
-            else:
-                row_data.extend(["-", "-"])
-
-            collections_data = benchmark_data[benchmark_data["metric"] == metrics[1]]
-            if not collections_data.empty:
-                row = collections_data.iloc[0]
-                baseline_collections = (
-                    f"{int(row['baseline_mean'])}"
-                    if not pd.isna(row["baseline_mean"])
-                    else "-"
-                )
-                current_collections = (
-                    f"{int(row['mean'])}" if not pd.isna(row["mean"]) else "-"
-                )
-                row_data.extend([baseline_collections, current_collections])
-            else:
-                row_data.extend(["-", "-"])
-
-            for metric in metrics[2:]:
-                metric_data = benchmark_data[benchmark_data["metric"] == metric]
-
-                if metric_data.empty:
-                    row_data.extend(["-", "-"])
-                    continue
-
-                row = metric_data.iloc[0]
-
-                baseline_mean_sec = (
-                    row["baseline_mean"] / 1000
-                    if not pd.isna(row["baseline_mean"])
-                    else None
-                )
-                baseline_ci_lower_sec = (
-                    row["baseline_ci_lower"] / 1000
-                    if not pd.isna(row["baseline_ci_lower"])
-                    else None
-                )
-                baseline_ci_upper_sec = (
-                    row["baseline_ci_upper"] / 1000
-                    if not pd.isna(row["baseline_ci_upper"])
-                    else None
-                )
-
-                baseline_val = fmt_float(baseline_mean_sec, digits=2)
-                baseline_ci = fmt_ci_symmetric(
-                    baseline_mean_sec,
-                    baseline_ci_lower_sec,
-                    baseline_ci_upper_sec,
-                    digits=2,
-                )
-                baseline_cell = f"{baseline_val}{baseline_ci}"
-
-                is_distinguishable = row["distinguishable"]
-                ratio_val = fmt_ratio(row["ratio"], distinguishable=is_distinguishable)
-                ratio_ci = fmt_ci_symmetric(
-                    row["ratio"], row["ratio_lower"], row["ratio_upper"], digits=2
-                )
-                ratio_cell = f"{ratio_val}{ratio_ci}"
-
-                row_data.extend([baseline_cell, ratio_cell])
-
-            lines.append(" & ".join(row_data) + r" \\")
-
-        if suite_idx < len(suite_groups) - 1:
-            total_cols = 2 + 2 * len(metrics)
-            lines.append(f"\\cmidrule{{1-{total_cols}}}")
-
-    lines.extend([r"\bottomrule", r"\end{tabular}"])
-
-    with open(output_file, "w") as f:
-        f.write("\n".join(lines))
-
-
-def load_suites(suite_names):
-    all_collections = []
-    all_totals = []
-    all_perf = []
-
-    for suite_name in suite_names:
-        collections, totals, perf = parse_all_benchmark_data(suite_name)
-
-        if not collections.empty:
-            collections = collections.drop(Metric.COLLECTION_NUMBER, axis=1)
-            num_collections = totals[totals["metric"] == Metric.TOTAL_COLLECTIONS]
-            collections = (
-                collections.groupby(
-                    [
-                        "suite",
-                        "experiment",
-                        "benchmark",
-                        "configuration",
-                        "metric",
-                        "invocation",
-                    ]
-                )["value"]
-                .sum()
-                .reset_index()
-            )
-            collections = collections.merge(
-                num_collections,
-                on=[
-                    "suite",
-                    "experiment",
-                    "benchmark",
-                    "configuration",
-                    "metric",
-                    "invocation",
-                    "value",
-                ],
-                how="outer",
-            )
-            all_collections.append(collections)
-
-        if not totals.empty:
-            all_totals.append(totals)
-
-        if not perf.empty:
-            all_perf.append(perf)
-
-    collections_df = (
-        pd.concat(all_collections, ignore_index=True)
-        if all_collections
-        else pd.DataFrame()
+    perf.mk_individual_table(
+        columns=[
+            MetricColumn(
+                metric=Metric.AVG_MEMORY,
+                agg_type=Aggregation.INDIVIDUAL,
+                header_name=r"Avg. Heap Size (MiB)",
+                value_type="mean",
+                format_func=fmt_bytes_to_mb,
+            ),
+        ],
+        suites=["alacritty", "fd", "som-rs-ast"],
+        output_file="tables/appendix_elision_heap_1.tex",
     )
-    totals_df = (
-        pd.concat(all_totals, ignore_index=True) if all_totals else pd.DataFrame()
+    perf.mk_individual_table(
+        columns=[
+            MetricColumn(
+                metric=Metric.AVG_MEMORY,
+                agg_type=Aggregation.INDIVIDUAL,
+                header_name=r"Avg. Heap Size (MiB)",
+                value_type="mean",
+                format_func=fmt_bytes_to_mb,
+            ),
+        ],
+        suites=["ripgrep", "grmtools", "som-rs-bc"],
+        output_file="tables/appendix_elision_heap_2.tex",
     )
-    perf_df = pd.concat(all_perf, ignore_index=True) if all_perf else pd.DataFrame()
+    perf.mk_table(
+        columns=[
+            MetricColumn(
+                metric=Metric.WALLCLOCK,
+                agg_type=Aggregation.SUITE_GEO,
+                header_name="Wall-clock",
+                overall=Aggregation.GLOBAL_GEO,
+                value_type="ratio",
+            ),
+            MetricColumn(
+                metric=Metric.USER,
+                agg_type=Aggregation.SUITE_GEO,
+                header_name="User-time",
+                overall=Aggregation.GLOBAL_GEO,
+                value_type="ratio",
+            ),
+        ],
+        baseline=False,
+        output_file="tables/elision_perf.tex",
+    )
 
-    return collections_df, totals_df, perf_df
+    perf.mk_table(
+        columns=[
+            MetricColumn(
+                metric=Metric.PCT_ELIDED,
+                agg_type=Aggregation.SUITE_ARITH,
+                header_name=r"Fin. Elided (\%)",
+                value_type="mean",
+            ),
+        ],
+        baseline=False,
+        output_file="tables/elision_metrics.tex",
+    )
 
+    mini_cfg = PlotConfig(
+        figsize=(3, 2),
+        max_benchmarks_per_plot=6,
+        group_width=0.8,
+        metric="ratio",
+        agg_type=Aggregation.SUITE_GEO,
+        ncols=1,
+    )
 
-def process_gcvs(results):
-    gcvs_results = results.gcvs
-    if gcvs_results.df.empty:
-        return
+    mini_plot = Plotter(mini_cfg)
+    mini_plot.plot(
+        perf.results,
+        metric=Metric.WALLCLOCK,
+        xlim=(0, 1.1),
+        output_file="plots/elision_wallclock.svg",
+    )
 
-    mk_gc_breakdown_table(gcvs_results, output_file="plots/gcvs_table.tex")
+    mini_plot.plot(
+        perf.results,
+        metric=Metric.USER,
+        xlim=(0, 1.1),
+        output_file="plots/elision_user.svg",
+    )
 
-    plotter = Plotter(savepath="plots/gcvs_plot.svg")
-    gc_metrics = [Metric.TIME_MARKING, Metric.TIME_SWEEPING, Metric.TIME_TOTAL]
-    gc_data = gcvs_results.arith[gcvs_results.arith["metric"].isin(gc_metrics)]
+    mini_plot.plot(
+        perf.results,
+        metric=Metric.AVG_MEMORY,
+        xlim=(0.4, 6.5),
+        output_file="plots/elision_heap.svg",
+    )
 
-    if not gc_data.empty:
-        plotter.plot(gc_data, y="ratio", experiment="gcvs")
+    mini_plot.plot(
+        perf.results,
+        metric=Metric.GC_TIME,
+        xlim=(0, 1.7),
+        output_file="plots/elision_pause.svg",
+    )
 
+    mini_plot.plot(
+        perf.results,
+        metric=Metric.TOTAL_COLLECTIONS,
+        xlim=(0.1, 1.3),
+        output_file="plots/elision_numgcs.svg",
+    )
 
-def process_elision(results):
-    elision_results = results.elision
-    if elision_results.df.empty:
-        return
+    acfg = PlotConfig(
+        figsize=(3, 7),
+        max_benchmarks_per_plot=22,
+        group_width=0.8,
+        metric="ratio",
+        agg_type=Aggregation.INDIVIDUAL,
+        ncols=4,
+    )
 
-    mk_gc_breakdown_table(elision_results, output_file="plots/elision_table.tex")
+    appendix = Plotter(acfg)
+    appendix.plot(
+        perf.results,
+        metric=Metric.WALLCLOCK,
+        title="Wall-clock Time",
+        ylabel="Relative performance of finalizer elision (lower is better).",
+        xlim=(0, 1.2),
+        output_file="plots/appendix_elision_wallclock.svg",
+    )
 
-    plotter = Plotter(savepath="plots/elision_plot.svg")
-    if not elision_results.arith.empty:
-        plotter.plot(elision_results.arith, y="ratio", experiment="elision")
+    appendix.plot(
+        perf.results,
+        metric=Metric.USER,
+        title="User Time",
+        ylabel="Relative performance of finalizer elision (lower is better).",
+        xlim=(0, 1.2),
+        output_file="plots/appendix_elision_user.svg",
+    )
+
+    appendix.plot(
+        perf.results,
+        metric=Metric.AVG_MEMORY,
+        title="Avg. Heap Size",
+        ylabel="Relative performance of finalizer elision (lower is better).",
+        xlim=(0.5, 6.5),
+        output_file="plots/appendix_elision_heap.svg",
+    )
+
+    appendix.plot(
+        perf.results,
+        metric=Metric.GC_TIME,
+        title="Total GC Pause Time",
+        ylabel="Relative performance of finalizer elision (lower is better).",
+        xlim=(0, 1.2),
+        output_file="plots/appendix_elision_pause.svg",
+    )
+
+    appendix.plot(
+        perf.results,
+        metric=Metric.TOTAL_COLLECTIONS,
+        title="Number of Collections",
+        ylabel="Relative performance of finalizer elision (lower is better).",
+        xlim=(0.1, 3),
+        output_file="plots/appendix_elision_numgcs.svg",
+    )
+
+    appendix.plot(
+        perf.results,
+        metric=Metric.ALLOCATED_GC,
+        title="Gc Objects Allocated",
+        ylabel="Relative performance of finalizer elision (lower is better).",
+        xlim=(0.3, 1.1),
+        output_file="plots/appendix_elision_gcallocs.svg",
+    )
 
 
 def process_premopt(results):
-    premopt_results = results.premopt
-    if premopt_results.df.empty:
+    r = results.premopt
+    if r.df.empty:
         return
 
-    mk_gc_breakdown_table(premopt_results, output_file="plots/premopt_table.tex")
+    plotter = Plotter(
+        max_benchmarks_per_plot=15, savepath="plots/premopt_individual.svg"
+    )
+    df = r.combined
 
-    plotter = Plotter(savepath="plots/premopt_plot.svg")
-    if not premopt_results.arith.empty:
-        plotter.plot(premopt_results.arith, y="ratio", experiment="premopt")
+    if not df.empty:
+        plotter.plot(
+            df,
+            y="ratio",
+            metrics=[Metric.WALLCLOCK],
+            experiment="premopt",
+            xlim=(0.8, 1.4),
+        )
+
+
+Path("plots").mkdir(exist_ok=True)
+Path("tables").mkdir(exist_ok=True)
+
+collections, totals, perf = load_suites(BENCHMARK_SUITES)
 
 
 Path("plots").mkdir(exist_ok=True)
