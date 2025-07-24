@@ -117,23 +117,11 @@ def prepare_build(method):
 
 @dataclass(frozen=True)
 class Artefact:
-    _name: Optional[str] = None
     repo: Optional[Repo] = None
-    deps: Tuple["Artefact"] = ()
-    steps: Optional[int] = 0
-    _src: Optional[Path] = None
-
-    @property
-    def name(self) -> str:
-        return self._name or self.repo.name
-
-    @property
-    def debug_name(self) -> str:
-        return self.name
 
     @property
     def src(self) -> Path:
-        return self._src or (SRC_DIR / self.repo.name)
+        return SRC_DIR / self.repo.name
 
     @property
     def install_prefix(self) -> Path:
@@ -161,41 +149,43 @@ class Artefact:
             self.repo.remove()
 
 
-class Crate(Artefact):
-    @property
-    def cargo_toml(self):
-        return f"{self.src}/Cargo.toml"
+class Heaptrack(Artefact):
+    def build(self, c):
+        self.repo.fetch()
+        self.build_dir.mkdir(parents=True, exist_ok=True)
+        self.install_prefix.mkdir(parents=True, exist_ok=True)
 
-    @command_runner(description="Building", dry_run=DRY_RUN)
-    def _cargo_build(self):
-        return [
-            "cargo",
-            "build",
-            "--release",
-            "--manifest-path",
-            self.cargo_toml,
-            "--target-dir",
-            self.build_dir,
+        cmake = [
+            "cmake",
+            "-S",
+            str(self.repo.src),
+            "-B",
+            str(self.build_dir),
+            f"-DCMAKE_INSTALL_PREFIX={self.install_prefix}",
+            "-DCMAKE_BUILD_TYPE=Release",
         ]
+        c.run(" ".join(cmake))
+        with c.cd(self.build_dir):
+            c.run(f"make -j install")
 
-    @prepare_build
-    def build(self):
-        self._cargo_build()
-        for f in (self.target / "release").glob("*"):
-            if (
-                f.is_file()
-                and not f.suffix in [".d", ".rlib"]
-                and not f.name.startswith(".")
-            ):
-                os.symlink(f, self.bin / f.name)
+    @property
+    def path(self) -> Path:
+        return self.install_prefix / "bin" / "heaptrack"
 
 
 ALLOY = Artefact(
-    steps=5907,
     repo=Repo(
         name="alloy",
         url="https://github.com/jacob-hughes/alloy",
         version="quickfix-stats",
+    ),
+)
+
+HEAPTRACK = Heaptrack(
+    repo=Repo(
+        name="heaptrack",
+        url="https://github.com/kde/heaptrack",
+        version="master",
     ),
 )
 

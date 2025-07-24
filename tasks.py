@@ -2,6 +2,8 @@ import os
 
 from invoke import task
 
+import results
+from artefacts import HEAPTRACK
 from build import BenchmarkSuite, Experiments, Metric
 from util import timer
 
@@ -49,8 +51,14 @@ def build_alloy(c, experiments=None, measurements=None):
 
 
 @task
+def build_heaptrack(c):
+    HEAPTRACK.build(c)
+
+
+@task
 def build_benchmarks(c, experiments=None, suites=None, measurements=None):
     """Build all benchmarks for all configurations"""
+    build_heaptrack(c)
     exps = _parse_args(
         pexecs=0, exps=experiments, suites=suites, measurements=measurements
     )
@@ -62,9 +70,8 @@ def build_benchmarks(c, experiments=None, suites=None, measurements=None):
         return
     print(f"Found {len(cfgs)} benchmark configuration(s):")
     [print(f"  {cfg.name}") for cfg in cfgs]
-    with timer("Building benchmark configurations", exps.build_steps):
-        for cfg in cfgs:
-            cfg.build(c=c)
+    for cfg in cfgs:
+        cfg.build(c=c)
 
 
 @task
@@ -79,13 +86,6 @@ def run_benchmarks(c, pexecs, experiments=None, suites=None, measurements=None):
         detailed=True,
     ):
         exps.run(c, pexecs)
-
-
-@task
-def process_benchmarks(c):
-    # list_exps(c)
-    exps = Experiments.all()
-    exps.process(c)
 
 
 @task
@@ -111,6 +111,11 @@ def clean_alloy(c, experiments=None):
         print(f"{len(alloy)} benchmark configurations removed.")
     else:
         print("cancelled.")
+
+
+@task
+def process_results(c):
+    results.process_results()
 
 
 @task

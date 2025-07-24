@@ -76,7 +76,7 @@ bare-metal: venv
 		$(MEASURE_ARG)
 
 process: venv
-	@$(INVOKE) process-benchmarks
+	@$(INVOKE) process-results
 
 build-paper:
 	docker build --progress=plain -f Dockerfile.paper --target export --output type=local,dest=./rustgc_paper -t rustgc-paper:latest .

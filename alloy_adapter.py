@@ -28,7 +28,8 @@ class AlloyAdapter(GaugeAdapter):
         GaugeAdapter.__init__(self, include_faulty, executor)
 
     def _create_command(self, command):
-        return "%s -f %s %s" % (self._time_bin, AlloyAdapter.time_format, command)
+        time = f"{self._time_bin} -f {AlloyAdapter.time_format}"
+        return f"{time} {command}"
 
     def should_enable_premature_finalizer_optimization(self, run_id):
         exec = run_id.benchmark.suite.executor.name
@@ -60,6 +61,13 @@ class AlloyAdapter(GaugeAdapter):
         if not self._completed_time_availability_check:
             self._check_which_time_command_is_available()
 
+        if "GC_HEAPTRACK_DIR" in run_id.env:
+            dir = run_id.env["GC_HEAPTRACK_DIR"]
+            bm = run_id.benchmark.name.lower()
+            out = f"{dir}/{bm}-{run_id.completed_invocations + 1}"
+            ht = run_id.env["HEAPTRACK_PATH"]
+            run_id.env["GC_HEAPTRACK_ZST"] = out
+            command = " ".join([ht, "--record-only", "-o", out, command])
         return self._create_command(command)
 
     def _check_which_time_command_is_available(self):
@@ -118,6 +126,16 @@ class AlloyAdapter(GaugeAdapter):
                 measure = Measurement(
                     invocation, iteration, time, "ms", run_id, "total"
                 )
+
+                # if "GC_HEAPTRACK_DIR" in run_id.env:
+                #     zst = run_id.env["GC_HEAPTRACK_ZST"]
+                #     ht_print = run_id.env["HEAPTRACK_PRINT_PATH"]
+                #     subprocess.run(
+                #         [ht_print, "-M", f"{zst}.massif", f"{zst}.zst"],
+                #         stdout=subprocess.DEVNULL,
+                #         stderr=subprocess.DEVNULL,
+                #     )
+
                 current.add_measurement(measure)
                 data_points.append(current)
                 current = DataPoint(run_id)

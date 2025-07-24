@@ -1,7 +1,5 @@
 import logging
 import os
-import subprocess
-from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from enum import Enum
 from pathlib import Path
@@ -12,7 +10,149 @@ from xvfbwrapper import Xvfb
 
 import benchmarks
 from artefacts import *
-from util import command_runner
+
+HS_MAP = {
+    "ripgrep": {
+        "heapsize-s": "32M",
+        "heapsize-l": "64M",
+        "heapsize-xl": "128M",
+    },
+    "binary_trees": {
+        "heapsize-s": "4M",
+        "heapsize-l": "8M",
+        "heapsize-xl": "16M",
+    },
+    "fd": {
+        "heapsize-s": "16M",
+        "heapsize-l": "32M",
+        "heapsize-xl": "64M",
+    },
+    "alacritty": {
+        "heapsize-s": "16M",
+        "heapsize-l": "32M",
+        "heapsize-xl": "64M",
+    },
+    "regex_redux": {
+        "heapsize-s": "256M",
+        "heapsize-l": "512M",
+        "heapsize-xl": "1024M",
+    },
+    "som-rs-bc": {
+        "heapsize-s": "32M",
+        "heapsize-l": "64M",
+        "heapsize-xl": "128M",
+    },
+    "som-rs-ast": {
+        "heapsize-s": "64M",
+        "heapsize-l": "96M",
+        "heapsize-xl": "128M",
+    },
+    "grmtools": {
+        "heapsize-s": "1024M",
+        "heapsize-l": "2048M",
+        "heapsize-xl": "4096M",
+    },
+}
+
+
+class Aggregation(Enum):
+    INDIVIDUAL = "individual"
+    SUITE = "suite"
+    OVERALL = "overall"
+    SUITE_ARITH = "suite_arith"
+    SUITE_GEO = "suite_geo"
+    GLOBAL_ARITH = "global_arith"
+    GLOBAL_GEO = "global_geo"
+    SNAPSHOT = "snapshot"
+
+
+class Agg(Enum):
+    ARITH = 1
+    GEO = 2
+
+
+class Metric(Enum):
+    def __init__(self, value, latex=None):
+        self._value_ = value
+        self.latex = latex
+
+    @classmethod
+    def _missing_(cls, value):
+        for member in cls:
+            if member.value == value:
+                return member
+        return None
+
+    COLLECTION_NUMBER = "collection_number"
+    TOTAL_COLLECTIONS = (
+        "total_collections",
+        r"\# collections",
+    )
+    MINOR_COLLECTIONS = "minor_collections"
+    MAJOR_COLLECTIONS = "major_collections"
+    PHASE = "kind"
+    MEM_HSIZE_ENTRY = "mem_hsize_entry"
+    MEM_HSIZE_EXIT = "mem_hsize_exit"
+    MEM_ALLOCD_ENTRY = "mem_allocd_entry"
+    MEM_ALLOCD_EXIT = "mem_allocd_exit"
+    MEM_ALLOCD_FLZQ = "mem_allocd_flzq"
+    MEM_FREED_EXPLICIT_ENTRY = "mem_freed_explicit_entry"
+    MEM_FREED_EXPLICIT_EXIT = "mem_freed_explicit_exit"
+    MEM_FREED_SWEPT = "mem_freed_swept"
+    MEM_FREED_FLZ = "mem_freed_flz"
+    TIME_MARKING = "time_marking"
+    TIME_FIN_Q = "time_fin_q"
+    TIME_SWEEPING = "time_sweeping"
+    TIME_TOTAL = "time_total"
+    FLZ_REGISTERED = "flz_registered"
+    FLZ_ELIDED = "flz_elided"
+    FLZ_RUN = "flz_run"
+    OBJ_ALLOCD_ARC = "obj_allocd_arc"
+    OBJ_ALLOCD_BOX = "obj_allocd_box"
+    OBJ_ALLOCD_FLZQ = "obj_allocd_flzq"
+    OBJ_ALLOCD_GC = "obj_allocd_gc"
+    OBJ_ALLOCD_RC = "obj_allocd_rc"
+    OBJ_FREED_SWEPT = "obj_freed_swept"
+    OBJ_FREED_EXPLICIT = "obj_freed_explicit"
+
+    MEM_HSIZE_AVG = (
+        "mem_hsize_avg",
+        "Avg. heap size",
+    )
+    MAX_MEMORY = "max_heap_size"
+    PCT_ELIDED = (
+        "pct_elided",
+        r"\% Fin. elided",
+    )
+    GC_TIME = (
+        "gc_time",
+        "Total GC pause time",
+    )
+
+    WALLCLOCK = (
+        "total",
+        "Wall-clock time",
+    )
+    USER = (
+        "usr",
+        "User time",
+    )
+
+    def __lt__(self, other):
+        return self.value < other.value
+
+    def __repr__(self):
+        return self.value
+
+    @property
+    def pathname(self):
+        if self == Metric.WALLCLOCK:
+            return "wallclock"
+
+        if self == Metric.USER:
+            return "user"
+
+        return self.value
 
 
 class DoubleQuotedStr(str):
@@ -35,7 +175,7 @@ PEXECS = 30
 DEFAULT_MEASUREMENTS = ["perf"]
 
 
-class Metric(Enum):
+class Measurement(Enum):
     PERF = "perf"
     METRICS = "metrics"
     HEAPTRACK = "heaptrack"
@@ -75,28 +215,32 @@ class ExperimentProfile(Enum):
 
 
 class GCVS(ExperimentProfile):
-    GC = ("gc", "Alloy")
-    RC = ("rc", r"RC \texttt{[gcmalloc]}")
-    ARC = ("arc", r"RC \texttt{[gcmalloc]}")
+    GC = ("gc", r"\texttt{Gc<T>} (Alloy)")
+    RC = ("rc", r"\texttt{Arc<T>}/\texttt{Rc<T>}")
+    ARC = ("arc", r"\texttt{Arc<T>}/\texttt{Rc<T>}")
     BASELINE = (
         "baseline",
         r"RC \texttt{[jemalloc]}",
         {"gc-default-allocator": False},
     )
-    TYPED_ARENA = ("typed-arena", "Typed Arena")
-    RUST_GC = ("rust-gc", "Rust-GC")
+    TYPED_ARENA = ("typed-arena", r"\texttt{Arena<T>")
+    RUST_GC = ("rust-gc", r"\texttt{Gc<T>} (Rust-GC)")
 
     @classmethod
     @property
     def measurements(cls):
-        return [Metric.PERF]
+        return [Measurement.PERF, Measurement.HEAPTRACK]
 
     @classmethod
     def _missing_(cls, value):
         exp = cls.__name__.lower()
 
         for member in cls:
-            if f"{exp}-{member.value}" in value:
+            if f"{exp}-rc" in value:
+                return cls.RC
+            elif f"{exp}-arc" in value:
+                return cls.RC
+            elif f"{exp}-{member.value}" in value:
                 return member
             elif "default" in value:
                 return cls.GC
@@ -126,7 +270,7 @@ class PremOpt(ExperimentProfile):
     @classmethod
     @property
     def measurements(cls):
-        return [Metric.PERF, Metric.METRICS]
+        return [Measurement.PERF, Measurement.METRICS]
 
     @classmethod
     def _missing_(cls, value):
@@ -145,13 +289,13 @@ class PremOpt(ExperimentProfile):
 
 
 class Elision(ExperimentProfile):
-    NAIVE = ("naive", "No Elision", {"finalizer-elision": False})
-    OPT = ("opt", "Elision")
+    NAIVE = ("naive", "Before", {"finalizer-elision": False})
+    OPT = ("opt", "After")
 
     @classmethod
     @property
     def measurements(cls):
-        return [Metric.PERF, Metric.METRICS]
+        return [Measurement.PERF, Measurement.METRICS]
 
     @classmethod
     def _missing_(cls, value):
@@ -167,6 +311,39 @@ class Elision(ExperimentProfile):
     @property
     def baseline(cls):
         return cls.NAIVE
+
+    def __repr__(self):
+        return self.value
+
+
+class HeapSize(ExperimentProfile):
+    DEFAULT = ("default", r"Default")
+    S = ("s", "1")
+    L = ("l", "2")
+    XL = ("xl", "3")
+
+    @classmethod
+    @property
+    def measurements(cls):
+        return [Measurement.PERF]
+
+    @classmethod
+    def _missing_(cls, value):
+        exp = cls.__name__.lower()
+
+        for member in cls:
+            if f"{exp}-{member.value}" in value:
+                return member
+            elif "default" in value:
+                return cls.DEFAULT
+        return None
+
+    @property
+    def baseline(cls):
+        return cls.DEFAULT
+
+    def __repr__(self):
+        return self.value
 
 
 def cargo_build(c, src, outdir, install_dir, build_artefact, bin, env=None):
@@ -251,11 +428,10 @@ def patch_repo(c, repo_path, patch_file):
 @dataclass(frozen=True)
 class BenchmarkSuite:
     name: str
-    crate: Crate
+    crate: str
     remove: str
     benchmarks: Tuple["Benchmark"]
     gcvs: Optional[Tuple[ExperimentProfile]] = None
-    deps: Optional[Tuple[Crate]] = ()
 
     @property
     def path(self) -> Path:
@@ -288,9 +464,8 @@ class BenchmarkSuite:
 
     @property
     def profiles(self) -> tuple[ExperimentProfile]:
-        p = tuple(PremOpt) + tuple(Elision)
+        p = tuple(PremOpt) + tuple(Elision) + tuple(HeapSize)
         if self.gcvs:
-            # self.gcvs is probably a set or list; convert to tuple for concatenation
             p = p + self.gcvs + (GCVS.BASELINE, GCVS.GC)
         return p
 
@@ -337,12 +512,6 @@ class BenchmarkSuite:
                 (GCVS.RC,),
             ),
             SomrsBC("som-rs-bc", "", "", benchmarks.SOM, (GCVS.RC,)),
-            YkSOM(
-                "yksom",
-                "",
-                "",
-                benchmarks.SOM,
-            ),
         }
 
 
@@ -642,6 +811,11 @@ class FdFind(BenchmarkSuite):
         url="https://github.com/sharkdp/fd",
         version="a4fdad6ff781b5b496c837fde24001b0e46973d6",
     )
+    REGEX = Repo(
+        name="regex",
+        url="https://github.com/rust-lang/regex",
+        version="bcbe40342628b15ab2543d386c745f7f0811b791",
+    )
 
     @property
     def cmd_args(self):
@@ -650,8 +824,10 @@ class FdFind(BenchmarkSuite):
     def build(self, c, target_dir, install_dir, bench_cfg_bin, profile, env):
         self.FD.fetch()
         LINUX.fetch()
+        self.REGEX.fetch()
 
         patch_repo(c, self.FD.src, PATCH_DIR / f"fd.{profile}.diff")
+        patch_repo(c, self.REGEX.src, PATCH_DIR / f"regex.{profile}.diff")
 
         cargo_build(
             c,
@@ -705,7 +881,7 @@ class Alacritty(BenchmarkSuite):
 @dataclass(frozen=True)
 class Experiment:
     profiles: Tuple[ExperimentProfile]
-    measurement: Metric
+    measurement: Measurement
     suite: "BenchmarkSuite"
     pexecs: int = 0
 
@@ -715,6 +891,9 @@ class Experiment:
 
     def run(self, c, pexecs, config):
         self.results.parent.mkdir(parents=True, exist_ok=True)
+        if self.measurement == Measurement.HEAPTRACK:
+            (self.results.parent / "heaptrack").mkdir(parents=True, exist_ok=True)
+
         rebench_cmd = [
             str(REBENCH_EXEC),
             "-R",
@@ -737,12 +916,17 @@ class Experiment:
         if only_installed and only_missing:
             raise ValueError("Can't select both only_installed and only_missing")
 
-        identical = [GCVS.GC, PremOpt.OPT, Elision.OPT]
+        identical = [
+            GCVS.GC,
+            PremOpt.OPT,
+            Elision.OPT,
+            HeapSize.DEFAULT,
+        ]
         executors = set()
 
         for p in self.profiles:
             name = "default" if p in identical else p.full
-            is_metrics = self.measurement == Metric.METRICS
+            is_metrics = self.measurement == Measurement.METRICS
             alloy = Alloy(p, metrics=is_metrics)
             executors.add(Executor(self, self.suite, self.measurement, name, alloy))
 
@@ -776,44 +960,27 @@ class Experiment:
 class Executor:
     experiment: "Experiment"
     suite: "BenchmarkSuite"
-    metric: "Metric"
+    metric: "Measurement"
     id: str
     alloy: Alloy
 
     @property
     def name(self):
-        is_metrics = self.metric == Metric.METRICS
+        is_metrics = self.metric == Measurement.METRICS
         base = f"{self.suite.name}-{self.id}"
         return f"{base}-metrics" if is_metrics else base
+
+    @property
+    def rebench_name(self):
+        is_perf = self.metric == Measurement.PERF
+        base = f"{self.suite.name}-{self.id}"
+        return base if is_perf else f"{base}-{self.metric.value}"
 
     def __repr__(self):
         return self.name
 
     def __lt__(self, other):
         return self.name < other.name
-
-    @property
-    def baseline(self):
-        # Helper to safely get config or None
-        def get_config(config_id):
-            return next(
-                (e for e in self.experiment.configurations() if config_id in e.id), None
-            )
-
-        if self.experiment.experiment == "premopt":
-            return get_config("premopt-none")
-        elif self.experiment.experiment == "elision":
-            if "elision-naive" not in self.id:
-                return get_config("elision-naive")
-            else:
-                return get_config("default")
-        else:
-            if "default" not in self.id:
-                return get_config("default")
-            else:
-                arc = get_config("gcvs-arc")
-                rc = get_config("gcvs-rc")
-                return arc or rc
 
     @property
     def install_prefix(self) -> Path:
@@ -824,8 +991,44 @@ class Executor:
         return self.install_prefix / self.name
 
     @property
+    def bin(self) -> str:
+        return str(self.name)
+
+    @property
+    def run_env(self):
+        libgc = str(cfg.alloy.install_prefix / "lib" / "libgc.so")
+        env = {
+            "DISPLAY": ":99",
+            "LD_PRELOAD": libgc,
+        }
+        if self.metric == Measurement.METRICS:
+            env["GC_LOG_DIR"] = str(self.metrics_data)
+        elif self.metric == Measurement.HEAPTRACK:
+            env["GC_HEAPTRACK_DIR"] = str(self.heaptrack_dir)
+            env["HEAPTRACK_PATH"] = str(HEAPTRACK.path)
+
+        if self.id == "heapsize-s":
+            env["GC_INITIAL_HEAP_SIZE"] = HS_MAP[self.suite.name]["heapsize-s"]
+            env["GC_MAXIMUM_HEAP_SIZE"] = HS_MAP[self.suite.name]["heapsize-s"]
+        elif self.id == "heapsize-l":
+            env["GC_INITIAL_HEAP_SIZE"] = HS_MAP[self.suite.name]["heapsize-l"]
+            env["GC_MAXIMUM_HEAP_SIZE"] = HS_MAP[self.suite.name]["heapsize-l"]
+        elif self.id == "heapsize-xl":
+            env["GC_INITIAL_HEAP_SIZE"] = HS_MAP[self.suite.name]["heapsize-xl"]
+            env["GC_MAXIMUM_HEAP_SIZE"] = HS_MAP[self.suite.name]["heapsize-xl"]
+        elif self.id == "heapsize-xxl":
+            env["GC_INITIAL_HEAP_SIZE"] = HS_MAP[self.suite.name]["heapsize-xxl"]
+            env["GC_MAXIMUM_HEAP_SIZE"] = HS_MAP[self.suite.name]["heapsize-xxl"]
+
+        return env
+
+    @property
     def metrics_data(self) -> Path:
         return self.experiment.results.parent / f"{self.id}"
+
+    @property
+    def heaptrack_dir(self) -> Path:
+        return self.experiment.results.parent / self.id
 
     @property
     def build_dir(self) -> Path:
@@ -844,6 +1047,10 @@ class Executor:
             PremOpt.OPT,
             Elision.OPT,
             Elision.NAIVE,
+            HeapSize.DEFAULT,
+            HeapSize.XL,
+            HeapSize.L,
+            HeapSize.S,
         ]:
             return "gc"
         else:
@@ -855,23 +1062,6 @@ class Executor:
             "RUSTC": self.alloy.path,
             "LD_PRELOAD": str(self.alloy.install_prefix / "lib" / "libgc.so"),
         }
-
-    @command_runner(description="Building", dry_run=DRY_RUN)
-    def _cargo_build(self):
-        return [
-            "cargo",
-            "build",
-            "--release",
-            "--manifest-path",
-            self.suite.crate.cargo_toml,
-            "--target-dir",
-            self.build_dir,
-        ]
-
-    @property
-    def build_steps(self):
-        return 10
-        # return self.suite.crate.steps
 
     def build(self, c=None):
         env = self.env.copy()
@@ -909,32 +1099,6 @@ class Experiments:
         for e in self.experiments:
             e.run(c, pexecs, self.config)
 
-    def process(self, c):
-        exp_name = "premopt"
-        suite_exps = [e for e in self.experiments if e.experiment == exp_name]
-        suites = set(e.suite for e in suite_exps)
-
-        from results import Criterea, SuiteData
-
-        # results = SuiteData.concat([s.results for s in suites])
-        # premopt = results.premopt
-        # print(premopt)
-
-        for s in suites:
-            s.results.premopt.plot_bar(
-                "benchmark", x="configuration", y=Criterea.WALLCLOCK
-            )
-            s.results.premopt.plot_bar("benchmark", x="configuration", y=Criterea.USER)
-
-            s.results.gcvs.plot_bar(
-                "benchmark", x="configuration", y=Criterea.WALLCLOCK
-            )
-            s.results.gcvs.plot_bar("benchmark", x="configuration", y=Criterea.USER)
-            s.results.elision.plot_bar(
-                "benchmark", x="configuration", y=Criterea.WALLCLOCK
-            )
-            s.results.elision.plot_bar("benchmark", x="configuration", y=Criterea.USER)
-
     def remove(self):
         for e in self.experiments:
             e.results.unlink(missing_ok=True)
@@ -968,30 +1132,18 @@ class Experiments:
 
         executors = self.configurations()
         for cfg in executors:
-            libgc = str(cfg.alloy.install_prefix / "lib" / "libgc.so")
-            exec_part[cfg.name] = {
+            exec_part[cfg.rebench_name] = {
                 "path": str(cfg.install_prefix),
-                "executable": cfg.path.name,
+                "executable": cfg.bin,
+                "env": cfg.run_env,
             }
-            if cfg.metric == Metric.METRICS:
-                exec_part[cfg.name].update(
-                    {
-                        "env": {
-                            "GC_LOG_DIR": str(cfg.metrics_data),
-                            "LD_PRELOAD": libgc,
-                            "DISPLAY": ":99",
-                        }
-                    }
-                )
-            else:
-                exec_part[cfg.name].update(
-                    {"env": {"LD_PRELOAD": libgc, "DISPLAY": ":99"}}
-                )
 
         for e in self.experiments:
             exp_part[e.name] = {
                 "suites": [e.suite.name],
-                "executions": [cfg.name for cfg in executors if cfg.experiment == e],
+                "executions": [
+                    cfg.rebench_name for cfg in executors if cfg.experiment == e
+                ],
                 "data_file": str(e.results),
             }
 
@@ -1035,7 +1187,7 @@ class Experiments:
 
     @classmethod
     def all(cls, pexecs: int = 30) -> "Experiments":
-        profiles = [GCVS, PremOpt, Elision]
+        profiles = [GCVS, PremOpt, Elision, HeapSize]
         return cls(pexecs, [e for p in profiles for e in p.experiments(pexecs)])
 
 
@@ -1052,21 +1204,6 @@ class RebenchConfig:
     @property
     def gauge_adapter(self) -> str:
         return {"AlloyAdapter": "alloy_adapter.py"}
-
-    @classmethod
-    def from_custom(cls, suite, experiment_name, cfg_names, cfg_bins):
-        experiment = {
-            f"{experiment_name}": {"suites": [suite_name], "executions": cfg_names}
-        }
-        config_data = {
-            "experiments": experiment,
-            "executors": {},
-            "benchmark_suites": {},
-        }
-
-        rebench = cls(**config_data)
-        rebench._add_suite(suite)
-        return rebench
 
     def write_to_file(self, file_path: Path):
         """Write the configuration to a YAML file."""

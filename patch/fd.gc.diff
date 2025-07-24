@@ -1,5 +1,103 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index 8fbb8ee..4bddda9 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -335,7 +335,7 @@ dependencies = [
+  "normpath",
+  "nu-ansi-term",
+  "regex",
+- "regex-syntax",
++ "regex-syntax 0.8.5 (registry+https://github.com/rust-lang/crates.io-index)",
+  "tempfile",
+  "test-case",
+  "version_check",
+@@ -374,8 +374,8 @@ dependencies = [
+  "aho-corasick",
+  "bstr",
+  "log",
+- "regex-automata",
+- "regex-syntax",
++ "regex-automata 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
++ "regex-syntax 0.8.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ ]
+ 
+ [[package]]
+@@ -432,7 +432,7 @@ dependencies = [
+  "globset",
+  "log",
+  "memchr",
+- "regex-automata",
++ "regex-automata 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
+  "same-file",
+  "walkdir",
+  "winapi-util",
+@@ -609,14 +609,21 @@ dependencies = [
+ 
+ [[package]]
+ name = "regex"
+-version = "1.11.1"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "b544ef1b4eac5dc2db33ea63606ae9ffcfac26c1416a2806ae0bf5f56b201191"
++version = "1.11.0"
+ dependencies = [
+  "aho-corasick",
+  "memchr",
+- "regex-automata",
+- "regex-syntax",
++ "regex-automata 0.4.8",
++ "regex-syntax 0.8.5",
++]
++
++[[package]]
++name = "regex-automata"
++version = "0.4.8"
++dependencies = [
++ "aho-corasick",
++ "memchr",
++ "regex-syntax 0.8.5",
+ ]
+ 
+ [[package]]
+@@ -627,9 +634,13 @@ checksum = "368758f23274712b504848e9d5a6f010445cc8b87a7cdb4d7cbee666c1288da3"
+ dependencies = [
+  "aho-corasick",
+  "memchr",
+- "regex-syntax",
++ "regex-syntax 0.8.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ ]
+ 
++[[package]]
++name = "regex-syntax"
++version = "0.8.5"
++
+ [[package]]
+ name = "regex-syntax"
+ version = "0.8.5"
+diff --git a/Cargo.toml b/Cargo.toml
+index 8244aa7..921b80f 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -38,7 +38,7 @@ aho-corasick = "1.1"
+ nu-ansi-term = "0.50"
+ argmax = "0.3.1"
+ ignore = "0.4.23"
+-regex = "1.11.1"
++regex = {path="../regex"}
+ regex-syntax = "0.8"
+ ctrlc = "3.2"
+ humantime = "2.1"
+diff --git a/src/config.rs b/src/config.rs
+index 9e18120..8aa5c2e 100644
+--- a/src/config.rs
++++ b/src/config.rs
+@@ -1,4 +1,4 @@
+-use std::{path::PathBuf, sync::Arc, time::Duration};
++use std::{gc::Gc as Arc, path::PathBuf, time::Duration};
+ 
+ use lscolors::LsColors;
+ use regex::bytes::RegexSet;
 diff --git a/src/main.rs b/src/main.rs
-index d275b2a..9b98ac9 100644
+index d275b2a..bfc3ba5 100644
 --- a/src/main.rs
 +++ b/src/main.rs
 @@ -1,3 +1,4 @@
@@ -7,6 +105,17 @@ index d275b2a..9b98ac9 100644
  mod cli;
  mod config;
  mod dir_entry;
+@@ -14,9 +15,9 @@ mod regex_helper;
+ mod walk;
+ 
+ use std::env;
++use std::gc::Gc as Arc;
+ use std::io::IsTerminal;
+ use std::path::Path;
+-use std::sync::Arc;
+ use std::time;
+ 
+ use anyhow::{anyhow, bail, Context, Result};
 @@ -35,21 +36,6 @@ use crate::filter::OwnerFilter;
  use crate::filter::TimeFilter;
  use crate::regex_helper::{pattern_has_uppercase_char, pattern_matches_strings_with_leading_dot};
