@@ -11,6 +11,8 @@ from xvfbwrapper import Xvfb
 import benchmarks
 from artefacts import *
 
+REBENCH_DATA = "results.data"
+
 HS_MAP = {
     "ripgrep": {
         "heapsize-s": "32M",
@@ -236,11 +238,11 @@ class GCVS(ExperimentProfile):
         exp = cls.__name__.lower()
 
         for member in cls:
-            if f"{exp}-rc" in value:
+            if f"rc" in value:
                 return cls.RC
-            elif f"{exp}-arc" in value:
+            elif f"arc" in value:
                 return cls.RC
-            elif f"{exp}-{member.value}" in value:
+            elif f"{member.value}" in value:
                 return member
             elif "default" in value:
                 return cls.GC
@@ -270,17 +272,16 @@ class PremOpt(ExperimentProfile):
     @classmethod
     @property
     def measurements(cls):
-        return [Measurement.PERF, Measurement.METRICS]
+        return [Measurement.PERF, Measurement.METRICS, Measurement.HEAPTRACK]
 
     @classmethod
     def _missing_(cls, value):
-        exp = cls.__name__.lower()
-
-        for member in cls:
-            if f"{exp}-{member.value}" in value:
-                return member
-            elif "default" in value:
-                return cls.OPT
+        if value == "default":
+            return cls.OPT
+        else:
+            for member in cls:
+                if member.value in value:
+                    return member
         return None
 
     @property
@@ -443,13 +444,6 @@ class BenchmarkSuite:
     @property
     def latex(self) -> str:
         return f"\\{self.name.replace('-','')}"
-
-    @property
-    def results(self):
-        from results import SuiteData
-
-        results = SuiteData(self)
-        return results
 
     def raw_data(self, measurement) -> Path:
         return RESULTS_DIR / self.name / measurement.value / "results.data"
@@ -890,9 +884,7 @@ class Experiment:
         return {"AlloyAdapter": "alloy_adapter.py"}
 
     def run(self, c, pexecs, config):
-        self.results.parent.mkdir(parents=True, exist_ok=True)
-        if self.measurement == Measurement.HEAPTRACK:
-            (self.results.parent / "heaptrack").mkdir(parents=True, exist_ok=True)
+        self.results_dir.mkdir(parents=True, exist_ok=True)
 
         rebench_cmd = [
             str(REBENCH_EXEC),
@@ -937,8 +929,20 @@ class Experiment:
         return executors
 
     @property
-    def results(self) -> Path:
-        return RESULTS_DIR / self.suite.name / self.measurement.value / "results.data"
+    def results_dir(self) -> Path:
+        return RESULTS_DIR / self.suite.name / self.measurement.value
+
+    @property
+    def results(self) -> [Path]:
+
+        if self.measurement == Measurement.PERF:
+            return {self.results_dir / REBENCH_DATA}
+        else:
+            return set(
+                f
+                for f in self.results_dir.rglob("*")
+                if f.name != REBENCH_DATA and not f.is_dir()
+            )
 
     @property
     def experiment(self):
@@ -946,6 +950,10 @@ class Experiment:
 
         assert all([x.experiment == expected for x in self.profiles])
         return self.profiles[0].experiment
+
+    @property
+    def profile_class(self):
+        return self.profiles[0].__class__
 
     @property
     def name(self) -> str:
@@ -996,16 +1004,17 @@ class Executor:
 
     @property
     def run_env(self):
-        libgc = str(cfg.alloy.install_prefix / "lib" / "libgc.so")
+        libgc = Path("/home/jake/research/bdwgc/out/libgc.so")
         env = {
             "DISPLAY": ":99",
-            "LD_PRELOAD": libgc,
+            "LD_PRELOAD": str(libgc),
         }
+        env["RESULTS_DIR"] = str(self.results_dir)
+        env["HT_PATH"] = str(HEAPTRACK.path)
+        if self.metric == Measurement.HEAPTRACK:
+            env["USE_HT"] = "true"
         if self.metric == Measurement.METRICS:
-            env["GC_LOG_DIR"] = str(self.metrics_data)
-        elif self.metric == Measurement.HEAPTRACK:
-            env["GC_HEAPTRACK_DIR"] = str(self.heaptrack_dir)
-            env["HEAPTRACK_PATH"] = str(HEAPTRACK.path)
+            env["USE_MT"] = "true"
 
         if self.id == "heapsize-s":
             env["GC_INITIAL_HEAP_SIZE"] = HS_MAP[self.suite.name]["heapsize-s"]
@@ -1023,12 +1032,10 @@ class Executor:
         return env
 
     @property
-    def metrics_data(self) -> Path:
-        return self.experiment.results.parent / f"{self.id}"
-
-    @property
-    def heaptrack_dir(self) -> Path:
-        return self.experiment.results.parent / self.id
+    def results_dir(self) -> Path:
+        dir = self.experiment.results_dir / self.id
+        dir.mkdir(parents=True, exist_ok=True)
+        return dir
 
     @property
     def build_dir(self) -> Path:
@@ -1101,7 +1108,7 @@ class Experiments:
 
     def remove(self):
         for e in self.experiments:
-            e.results.unlink(missing_ok=True)
+            e.results_dir.unlink(missing_ok=True)
 
     def alloy_variants(self, only_installed=False, only_missing=False):
         l = [cfg.alloy for cfg in self.configurations()]
@@ -1144,7 +1151,7 @@ class Experiments:
                 "executions": [
                     cfg.rebench_name for cfg in executors if cfg.experiment == e
                 ],
-                "data_file": str(e.results),
+                "data_file": str(e.results_dir / REBENCH_DATA),
             }
 
             bm_part[e.suite.name] = {
@@ -1189,6 +1196,13 @@ class Experiments:
     def all(cls, pexecs: int = 30) -> "Experiments":
         profiles = [GCVS, PremOpt, Elision, HeapSize]
         return cls(pexecs, [e for p in profiles for e in p.experiments(pexecs)])
+
+    @property
+    def results(self):
+        results = set()
+        for e in self.experiments:
+            results.update(e.results)
+        return results
 
 
 @dataclass
