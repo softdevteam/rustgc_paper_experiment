@@ -31,7 +31,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && apt-get update -y \
     && apt-get install -y --no-install-recommends \
     autotools-dev bison bc perl build-essential clang cmake curl dvipng elfutils \
-    cm-super flex gdb git gperf fontconfig libfontconfig1-dev libboost-all-dev \
+    texlive-latex-extra cm-super flex gdb git gperf fontconfig libfontconfig1-dev libboost-all-dev \
     libdwarf-dev libdw-dev libedit-dev libffi-dev liblzma-dev libssl-dev \
     libtinfo-dev libunwind-dev libzip-dev libzstd-dev \
     libx11-6 libx11-xcb1 libxkbcommon-x11-dev libxext6 libxrandr2 libxcb1 \
