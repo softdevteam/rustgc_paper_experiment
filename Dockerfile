@@ -64,9 +64,9 @@ COPY *.py .
 RUN if [ "$FULL" = "false" ]; then \
     make download-bins; \
     else \
-    RUN make build-heaptrack; \
-    RUN make build-alloy; \
-    RUN make build-benchmarks; \
+    make build-heaptrack; \
+    make build-alloy; \
+    make build-benchmarks; \
     fi
 #
 COPY extra extra
