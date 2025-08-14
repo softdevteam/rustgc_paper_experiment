@@ -6,7 +6,7 @@ ARG EXPERIMENTS
 ARG SUITES
 ARG MEASUREMENTS
 
-FROM debian:latest as base
+FROM debian:bookworm as base
 
 FROM base as build
 WORKDIR /app
@@ -60,15 +60,14 @@ RUN make venv
 
 COPY src src
 COPY *.py .
+RUN make build-heaptrack
 
 RUN if [ "$FULL" = "false" ]; then \
     make download-bins; \
     else \
-    make build-heaptrack; \
     make build-alloy; \
     make build-benchmarks; \
     fi
-#
 COPY extra extra
 
 FROM build as runtime
